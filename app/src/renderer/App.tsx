@@ -31,6 +31,7 @@ export function App() {
   const [settings, setSettings] = useState<Settings>(loadSettings)
   const [connState, setConnState] = useState<ConnState>('disconnected')
   const [connError, setConnError] = useState<string>()
+  const [loginUrl, setLoginUrl] = useState<string>()
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [presets, setPresets] = useState<PresetInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>()
@@ -72,7 +73,10 @@ export function App() {
       viaSlack
         ? {
             slack: true,
-            onLoginUrl: (url) => openLink(url),
+            onLoginUrl: (url) => {
+              setLoginUrl(url)
+              openLink(url)
+            },
             onToken: (token) => {
               const next = { ...settings, token }
               setSettings(next)
@@ -104,6 +108,7 @@ export function App() {
             onSlack={() => connect(true)}
             connecting={connState === 'connecting'}
             error={connError}
+            loginUrl={loginUrl}
           />
         ) : (
           <>
@@ -175,8 +180,10 @@ function ConnectForm(props: {
   onSlack: () => void
   connecting: boolean
   error?: string
+  loginUrl?: string
 }) {
-  const { settings, setSettings, onConnect, onSlack, connecting, error } = props
+  const { settings, setSettings, onConnect, onSlack, connecting, error, loginUrl } = props
+  const [copied, setCopied] = useState(false)
   return (
     <div className="connect-form">
       <label>
@@ -190,6 +197,17 @@ function ConnectForm(props: {
       <button className="btn primary" onClick={onSlack} disabled={connecting}>
         {connecting ? 'Connecting…' : 'Sign in with Slack'}
       </button>
+      {connecting && loginUrl && (
+        <button
+          className="btn"
+          onClick={() => {
+            navigator.clipboard.writeText(loginUrl)
+            setCopied(true)
+          }}
+        >
+          {copied ? 'Link copied — paste it in your browser' : "Browser didn't open? Copy sign-in link"}
+        </button>
+      )}
       <details>
         <summary className="muted-summary">Connect with a token instead</summary>
         <label>
