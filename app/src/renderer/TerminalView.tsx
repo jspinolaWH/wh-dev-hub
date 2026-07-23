@@ -15,6 +15,9 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
       fontSize: 14,
       theme: { background: '#0b1220', foreground: '#d7e0ea', cursor: '#3fd08c' },
       scrollback: 20000,
+      // Hosts are Windows; tells xterm the source is ConPTY so it handles
+      // its full-screen repaints and reflow correctly.
+      windowsPty: { backend: 'conpty' },
     })
     const fit = new FitAddon()
     term.loadAddon(fit)
@@ -35,14 +38,28 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
 
     const offInput = term.onData((data) => client.send({ t: 'input', sessionId, data }))
 
+    // Debounced, change-only resize: a resize makes TUI apps repaint the
+    // whole screen, so firing it on every observer tick causes a flicker
+    // loop when scrollbars toggle the container size by a pixel.
+    let lastCols = term.cols
+    let lastRows = term.rows
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined
     const resizeObserver = new ResizeObserver(() => {
-      fit.fit()
-      client.send({ t: 'resize', sessionId, cols: term.cols, rows: term.rows })
+      clearTimeout(resizeTimer)
+      resizeTimer = setTimeout(() => {
+        fit.fit()
+        if (term.cols !== lastCols || term.rows !== lastRows) {
+          lastCols = term.cols
+          lastRows = term.rows
+          client.send({ t: 'resize', sessionId, cols: term.cols, rows: term.rows })
+        }
+      }, 150)
     })
     resizeObserver.observe(el)
     term.focus()
 
     return () => {
+      clearTimeout(resizeTimer)
       resizeObserver.disconnect()
       offInput.dispose()
       offMsg()

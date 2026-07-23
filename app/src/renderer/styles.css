@@ -18,6 +18,7 @@ body,
 #root {
   height: 100%;
   margin: 0;
+  overflow: hidden;
 }
 
 body {
@@ -30,6 +31,7 @@ body {
 .app {
   display: flex;
   height: 100%;
+  overflow: hidden;
 }
 
 .sidebar {
@@ -223,13 +225,18 @@ input:focus {
 .main {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
+  overflow: hidden;
 }
 
 .terminal-container {
   flex: 1;
+  min-width: 0;
+  min-height: 0;
   padding: 8px;
   background: var(--bg);
+  overflow: hidden;
 }
 
 .placeholder {
