@@ -144,6 +144,6 @@ function escapeHtml(s: string) {
 function page(title: string, body: string) {
   return `<!doctype html><html><head><title>WasteHero Dev Hub</title></head>
 <body style="font-family:system-ui;background:#0b1220;color:#d7e0ea;display:flex;align-items:center;justify-content:center;height:100vh">
-<div style="text-align:center"><div style="width:52px;height:52px;border-radius:12px;background:#3fd08c;color:#06251a;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-size:20px">WH</div>
+<div style="text-align:center"><div style="width:52px;height:52px;border-radius:12px;background:#75bdea;color:#082334;font-weight:800;display:inline-flex;align-items:center;justify-content:center;font-size:20px">WH</div>
 <h2>${title}</h2><p style="color:#8296ad">${body}</p></div></body></html>`
 }
