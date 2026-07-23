@@ -20,9 +20,17 @@ export interface SessionInfo {
   links: SessionLink[]
 }
 
+export interface PresetInfo {
+  id: string
+  name: string
+  description: string
+}
+
 export interface CreateSessionRequest {
   name: string
-  cwd: string
+  /** When set, cwd/command come from the daemon-side preset instead. */
+  presetId?: string
+  cwd?: string
   /** Full command line; defaults to `claude` when omitted. */
   command?: string
   cols: number
@@ -41,7 +49,7 @@ export type ClientMsg =
   | { t: 'remove'; sessionId: string }
 
 export type ServerMsg =
-  | { t: 'hello-ok'; user: string; sessions: SessionInfo[] }
+  | { t: 'hello-ok'; user: string; sessions: SessionInfo[]; presets: PresetInfo[] }
   | { t: 'error'; message: string }
   | { t: 'sessions'; sessions: SessionInfo[] }
   | { t: 'created'; session: SessionInfo }

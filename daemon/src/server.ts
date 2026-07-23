@@ -5,6 +5,7 @@ import type { ClientMsg, ServerMsg } from '@wh/shared'
 import type { Authenticator } from './auth'
 import type { SessionManager } from './sessions'
 import { DATA_DIR } from './config'
+import { resolvePreset, type Preset, type PortAllocator } from './presets'
 
 interface ClientState {
   user: string | null
@@ -17,8 +18,11 @@ export function startServer(opts: {
   auth: Authenticator
   sessions: SessionManager
   inheritHostClaudeLogin: string[]
+  presets: Preset[]
+  allocator: PortAllocator
 }) {
-  const { host, port, auth, sessions, inheritHostClaudeLogin } = opts
+  const { host, port, auth, sessions, inheritHostClaudeLogin, presets, allocator } = opts
+  const presetInfos = presets.map((p) => ({ id: p.id, name: p.name, description: p.description }))
 
   /** Isolated Claude profile per user so each teammate has their own login. */
   const envForUser = (user: string): Record<string, string> => {
@@ -69,7 +73,7 @@ export function startServer(opts: {
           const result = await auth.verify(msg.token)
           if (!result) return send(ws, { t: 'error', message: 'authentication failed' })
           state.user = result.user
-          return send(ws, { t: 'hello-ok', user: result.user, sessions: sessions.list() })
+          return send(ws, { t: 'hello-ok', user: result.user, sessions: sessions.list(), presets: presetInfos })
         }
 
         if (!state.user) return send(ws, { t: 'error', message: 'not authenticated' })
@@ -87,7 +91,42 @@ export function startServer(opts: {
           case 'list':
             return send(ws, { t: 'sessions', sessions: sessions.list() })
           case 'create': {
-            const info = sessions.create(msg, state.user, envForUser(state.user))
+            const userEnv = envForUser(user)
+            let info
+            if (msg.presetId) {
+              const preset = presets.find((p) => p.id === msg.presetId)
+              if (!preset) throw new Error(`no such preset: ${msg.presetId}`)
+              const resolved = await resolvePreset(preset, allocator)
+              try {
+                info = sessions.create({
+                  name: msg.name || preset.name,
+                  cwd: resolved.cwd,
+                  command: resolved.command,
+                  cols: msg.cols,
+                  rows: msg.rows,
+                  owner: user,
+                  env: { ...userEnv, ...resolved.env },
+                  links: resolved.links,
+                  ports: resolved.ports,
+                })
+              } catch (err) {
+                allocator.release(resolved.ports)
+                throw err
+              }
+            } else {
+              if (!msg.cwd) throw new Error('working directory is required')
+              info = sessions.create({
+                name: msg.name,
+                cwd: msg.cwd,
+                command: msg.command ?? 'claude',
+                cols: msg.cols,
+                rows: msg.rows,
+                owner: user,
+                env: userEnv,
+                links: [],
+                ports: [],
+              })
+            }
             return send(ws, { t: 'created', session: info })
           }
           case 'attach': {

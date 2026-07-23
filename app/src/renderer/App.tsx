@@ -1,7 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { SessionInfo } from '@wh/shared'
+import type { PresetInfo, SessionInfo } from '@wh/shared'
 import { HubClient, type ConnState } from './hubClient'
 import { TerminalView } from './TerminalView'
+
+declare global {
+  interface Window {
+    wh?: { openExternal: (url: string) => void }
+  }
+}
+
+const openLink = (url: string) => (window.wh ? window.wh.openExternal(url) : window.open(url))
 
 const SETTINGS_KEY = 'wh-hub-settings'
 
@@ -24,6 +32,7 @@ export function App() {
   const [connState, setConnState] = useState<ConnState>('disconnected')
   const [connError, setConnError] = useState<string>()
   const [sessions, setSessions] = useState<SessionInfo[]>([])
+  const [presets, setPresets] = useState<PresetInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
@@ -33,6 +42,7 @@ export function App() {
     () =>
       client.onMessage((msg) => {
         if (msg.t === 'hello-ok' || msg.t === 'sessions') setSessions(client.sessions)
+        if (msg.t === 'hello-ok') setPresets(client.presets)
         if (msg.t === 'created') {
           setSelectedId(msg.session.id)
           setShowCreate(false)
@@ -125,15 +135,16 @@ export function App() {
         <CreateDialog
           busy={creating}
           error={createError}
+          presets={presets}
           onClose={() => {
             setShowCreate(false)
             setCreating(false)
             setCreateError(undefined)
           }}
-          onCreate={(name, cwd, command) => {
+          onCreate={(req) => {
             setCreating(true)
             setCreateError(undefined)
-            client.send({ t: 'create', name, cwd, command, cols: 120, rows: 30 })
+            client.send({ t: 'create', ...req, cols: 120, rows: 30 })
           }}
         />
       )}
@@ -195,6 +206,15 @@ function SessionCard(props: {
         {s.status === 'running' && s.attachedClients > 0 && ` · ${s.attachedClients} attached`}
       </div>
       <div className="session-meta path">{s.cwd}</div>
+      {s.links.length > 0 && (
+        <div className="session-links">
+          {s.links.map((l) => (
+            <button key={l.url} className="btn tiny link" onClick={(e) => (e.stopPropagation(), openLink(l.url))}>
+              {l.label} ↗
+            </button>
+          ))}
+        </div>
+      )}
       <div className="session-actions">
         {s.status === 'running' ? (
           <button className="btn tiny danger" onClick={(e) => (e.stopPropagation(), onKill())}>
@@ -213,14 +233,19 @@ function SessionCard(props: {
 function CreateDialog(props: {
   busy: boolean
   error?: string
+  presets: PresetInfo[]
   onClose: () => void
-  onCreate: (name: string, cwd: string, command: string) => void
+  onCreate: (req: { name: string; presetId?: string; cwd?: string; command?: string }) => void
 }) {
   const [name, setName] = useState('')
+  const [presetId, setPresetId] = useState('')
   const [cwd, setCwd] = useState('')
   const [command, setCommand] = useState('claude')
   const nameRef = useRef<HTMLInputElement>(null)
   useEffect(() => nameRef.current?.focus(), [])
+
+  const preset = props.presets.find((p) => p.id === presetId)
+  const valid = preset ? true : !!cwd.trim()
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
@@ -230,14 +255,37 @@ function CreateDialog(props: {
           Name
           <input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="invoicing loop" />
         </label>
-        <label>
-          Working directory (a folder on the host machine)
-          <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder={'C:\\Users\\drasm\\Desktop\\wasteheroRepo'} />
-        </label>
-        <label>
-          Command
-          <input value={command} onChange={(e) => setCommand(e.target.value)} />
-        </label>
+        {props.presets.length > 0 && (
+          <label>
+            Environment
+            <select value={presetId} onChange={(e) => setPresetId(e.target.value)}>
+              <option value="">Custom (folder + command)</option>
+              {props.presets.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {preset ? (
+          <div className="preset-desc">{preset.description}</div>
+        ) : (
+          <>
+            <label>
+              Working directory (a folder on the host machine)
+              <input
+                value={cwd}
+                onChange={(e) => setCwd(e.target.value)}
+                placeholder={'C:\\Users\\drasm\\Desktop\\wasteheroRepo'}
+              />
+            </label>
+            <label>
+              Command
+              <input value={command} onChange={(e) => setCommand(e.target.value)} />
+            </label>
+          </>
+        )}
         {props.error && <div className="error">{props.error}</div>}
         <div className="modal-actions">
           <button className="btn" onClick={props.onClose}>
@@ -245,8 +293,12 @@ function CreateDialog(props: {
           </button>
           <button
             className="btn primary"
-            disabled={!cwd.trim() || props.busy}
-            onClick={() => props.onCreate(name, cwd.trim(), command)}
+            disabled={!valid || props.busy}
+            onClick={() =>
+              props.onCreate(
+                preset ? { name, presetId } : { name, cwd: cwd.trim(), command },
+              )
+            }
           >
             {props.busy ? 'Creating…' : 'Create'}
           </button>

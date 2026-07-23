@@ -129,6 +129,35 @@ input:focus {
   border-color: var(--accent);
 }
 
+select {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.preset-desc {
+  color: var(--muted);
+  font-size: 12px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.session-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.btn.link {
+  color: var(--accent);
+}
+
 .btn {
   background: var(--panel-2);
   border: 1px solid var(--border);

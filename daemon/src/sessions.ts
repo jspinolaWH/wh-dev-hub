@@ -3,8 +3,9 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import * as pty from '@lydell/node-pty'
-import type { SessionInfo, SessionLink, CreateSessionRequest } from '@wh/shared'
+import type { SessionInfo, SessionLink } from '@wh/shared'
 import { DATA_DIR } from './config'
+import type { PortAllocator } from './presets'
 
 interface SessionMeta {
   id: string
@@ -14,6 +15,19 @@ interface SessionMeta {
   owner: string
   createdAt: string
   links: SessionLink[]
+  ports: number[]
+}
+
+export interface SpawnSpec {
+  name: string
+  cwd: string
+  command: string
+  cols: number
+  rows: number
+  owner: string
+  env: Record<string, string>
+  links: SessionLink[]
+  ports: number[]
 }
 
 interface Session {
@@ -37,7 +51,10 @@ export interface SessionEvents {
 export class SessionManager extends EventEmitter {
   private sessions = new Map<string, Session>()
 
-  constructor(private scrollbackChars: number) {
+  constructor(
+    private scrollbackChars: number,
+    private allocator: PortAllocator,
+  ) {
     super()
     this.restoreMeta()
   }
@@ -85,10 +102,10 @@ export class SessionManager extends EventEmitter {
     }
   }
 
-  create(req: CreateSessionRequest, owner: string, env: Record<string, string> = {}): SessionInfo {
+  create(spec: SpawnSpec): SessionInfo {
     const id = crypto.randomBytes(6).toString('hex')
-    const command = req.command?.trim() || 'claude'
-    if (!fs.existsSync(req.cwd)) throw new Error(`cwd does not exist: ${req.cwd}`)
+    const command = spec.command.trim() || 'claude'
+    if (!fs.existsSync(spec.cwd)) throw new Error(`cwd does not exist: ${spec.cwd}`)
 
     const isWin = process.platform === 'win32'
     const shell = isWin ? process.env.ComSpec ?? 'cmd.exe' : '/bin/bash'
@@ -97,23 +114,34 @@ export class SessionManager extends EventEmitter {
     // commands that contain their own quotes.
     const shellArgs: string | string[] = isWin ? `/d /s /c "${command}"` : ['-lc', command]
 
+    // Scrub Claude-session markers the daemon may have inherited (e.g. when
+    // started from inside a Claude session in dev) — otherwise child claudes
+    // think they are subagents and disable transcript saving / --resume.
+    const baseEnv: Record<string, string> = {}
+    for (const [k, v] of Object.entries(process.env)) {
+      if (v === undefined) continue
+      if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_')) continue
+      baseEnv[k] = v
+    }
+
     const proc = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
-      cols: req.cols,
-      rows: req.rows,
-      cwd: req.cwd,
-      env: { ...(process.env as Record<string, string>), ...env },
+      cols: spec.cols,
+      rows: spec.rows,
+      cwd: spec.cwd,
+      env: { ...baseEnv, ...spec.env },
     })
 
     const session: Session = {
       meta: {
         id,
-        name: req.name || command,
-        cwd: req.cwd,
+        name: spec.name || command,
+        cwd: spec.cwd,
         command,
-        owner,
+        owner: spec.owner,
         createdAt: new Date().toISOString(),
-        links: [],
+        links: spec.links,
+        ports: spec.ports,
       },
       proc,
       status: 'running',
@@ -132,6 +160,7 @@ export class SessionManager extends EventEmitter {
       session.status = 'exited'
       session.exitCode = exitCode
       session.proc = null
+      this.allocator.release(session.meta.ports)
       this.emit('exit', id, exitCode)
       this.emit('changed')
     })

@@ -1,4 +1,4 @@
-import type { ClientMsg, ServerMsg, SessionInfo } from '@wh/shared'
+import type { ClientMsg, ServerMsg, SessionInfo, PresetInfo } from '@wh/shared'
 
 type Listener = (msg: ServerMsg) => void
 
@@ -10,6 +10,7 @@ export class HubClient {
   state: ConnState = 'disconnected'
   user = ''
   sessions: SessionInfo[] = []
+  presets: PresetInfo[] = []
 
   onMessage(fn: Listener): () => void {
     this.listeners.add(fn)
@@ -30,6 +31,7 @@ export class HubClient {
         this.state = 'connected'
         this.user = msg.user
         this.sessions = msg.sessions
+        this.presets = msg.presets
         onStateChange(this.state)
       } else if (msg.t === 'sessions') {
         this.sessions = msg.sessions

@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { DEFAULT_DAEMON_PORT } from '@wh/shared'
+import type { Preset } from './presets'
 
 export interface HubConfig {
   host: string
@@ -13,6 +14,8 @@ export interface HubConfig {
    * isolated per-user profile (handy on a dev laptop).
    */
   inheritHostClaudeLogin: string[]
+  /** One-click environment recipes offered in the New-session dialog. */
+  presets: Preset[]
   /** Max scrollback kept per session, in characters. */
   scrollbackChars: number
 }
@@ -28,6 +31,7 @@ const DEFAULTS: HubConfig = {
   port: DEFAULT_DAEMON_PORT,
   tokens: {},
   inheritHostClaudeLogin: ['dev'],
+  presets: [],
   scrollbackChars: 2_000_000,
 }
 

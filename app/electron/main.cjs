@@ -1,5 +1,9 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain, shell } = require('electron')
 const path = require('node:path')
+
+ipcMain.handle('open-external', (_event, url) => {
+  if (typeof url === 'string' && /^https?:\/\//.test(url)) shell.openExternal(url)
+})
 
 function createWindow() {
   const win = new BrowserWindow({
