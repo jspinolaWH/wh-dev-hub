@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "tsx src/index.ts",
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.cjs --external:@lydell/node-pty"
   },
   "dependencies": {
     "@lydell/node-pty": "^1.1.0",
@@ -15,6 +16,7 @@
   "devDependencies": {
     "@types/node": "^22.10.0",
     "@types/ws": "^8.5.13",
+    "esbuild": "^0.28.1",
     "tsx": "^4.19.0",
     "typescript": "^5.7.0"
   }

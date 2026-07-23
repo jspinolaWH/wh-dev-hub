@@ -2,6 +2,8 @@ node_modules/
 dist/
 out/
 data/
+app/release/
+app/build/
 *.log
 .env
 .env.*

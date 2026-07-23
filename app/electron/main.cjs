@@ -42,6 +42,7 @@ function createWindow() {
     title: 'WasteHero Dev Hub',
     backgroundColor: '#0b1220',
     autoHideMenuBar: true,
+    icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
