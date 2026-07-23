@@ -9,6 +9,7 @@
   "dependencies": {
     "@lydell/node-pty": "^1.1.0",
     "@wh/shared": "*",
+    "selfsigned": "^5.5.0",
     "ws": "^8.18.0"
   },
   "devDependencies": {

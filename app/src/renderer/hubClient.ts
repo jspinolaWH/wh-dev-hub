@@ -17,16 +17,30 @@ export class HubClient {
     return () => this.listeners.delete(fn)
   }
 
-  connect(url: string, token: string, onStateChange: (s: ConnState, error?: string) => void) {
+  connect(
+    url: string,
+    token: string,
+    onStateChange: (s: ConnState, error?: string) => void,
+    opts?: { slack?: boolean; onLoginUrl?: (url: string) => void; onToken?: (token: string) => void },
+  ) {
     this.disconnect()
     this.state = 'connecting'
     onStateChange(this.state)
     const ws = new WebSocket(url)
     this.ws = ws
 
-    ws.onopen = () => this.send({ t: 'hello', token, client: 'wh-dev-hub-app' })
+    ws.onopen = () => this.send(opts?.slack ? { t: 'login-start' } : { t: 'hello', token, client: 'wh-dev-hub-app' })
     ws.onmessage = (ev) => {
       const msg: ServerMsg = JSON.parse(ev.data)
+      if (msg.t === 'login-url') {
+        opts?.onLoginUrl?.(msg.url)
+        return
+      }
+      if (msg.t === 'login-ok') {
+        opts?.onToken?.(msg.token)
+        this.send({ t: 'hello', token: msg.token, client: 'wh-dev-hub-app' })
+        return
+      }
       if (msg.t === 'hello-ok') {
         this.state = 'connected'
         this.user = msg.user

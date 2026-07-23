@@ -198,6 +198,24 @@ select {
   font-size: 12px;
 }
 
+details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+details > label,
+details > .btn {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.muted-summary {
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .session-list {
   display: flex;
   flex-direction: column;

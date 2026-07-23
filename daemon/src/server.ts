@@ -6,10 +6,12 @@ import type { Authenticator } from './auth'
 import type { SessionManager } from './sessions'
 import { DATA_DIR } from './config'
 import { resolvePreset, type Preset, type PortAllocator } from './presets'
+import type { SlackAuth } from './slackAuth'
 
 interface ClientState {
   user: string | null
   attached: Set<string>
+  pendingLoginState: string | null
 }
 
 export function startServer(opts: {
@@ -20,8 +22,9 @@ export function startServer(opts: {
   inheritHostClaudeLogin: string[]
   presets: Preset[]
   allocator: PortAllocator
+  slackAuth?: SlackAuth
 }) {
-  const { host, port, auth, sessions, inheritHostClaudeLogin, presets, allocator } = opts
+  const { host, port, auth, sessions, inheritHostClaudeLogin, presets, allocator, slackAuth } = opts
   const presetInfos = presets.map((p) => ({ id: p.id, name: p.name, description: p.description }))
 
   /** Isolated Claude profile per user so each teammate has their own login. */
@@ -56,8 +59,17 @@ export function startServer(opts: {
     }
   })
 
+  slackAuth?.on('login', (loginState: string, token: string, user: string) => {
+    for (const [ws, state] of clients) {
+      if (state.pendingLoginState === loginState) {
+        state.pendingLoginState = null
+        send(ws, { t: 'login-ok', token, user })
+      }
+    }
+  })
+
   wss.on('connection', (ws) => {
-    const state: ClientState = { user: null, attached: new Set() }
+    const state: ClientState = { user: null, attached: new Set(), pendingLoginState: null }
     clients.set(ws, state)
 
     ws.on('message', async (raw) => {
@@ -69,6 +81,13 @@ export function startServer(opts: {
       }
 
       try {
+        if (msg.t === 'login-start') {
+          if (!slackAuth) return send(ws, { t: 'error', message: 'Slack sign-in is not configured on this hub' })
+          const { state: loginState, url } = slackAuth.startLogin()
+          state.pendingLoginState = loginState
+          return send(ws, { t: 'login-url', url })
+        }
+
         if (msg.t === 'hello') {
           const result = await auth.verify(msg.token)
           if (!result) return send(ws, { t: 'error', message: 'authentication failed' })

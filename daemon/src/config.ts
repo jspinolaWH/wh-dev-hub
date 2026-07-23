@@ -4,9 +4,21 @@ import crypto from 'node:crypto'
 import { DEFAULT_DAEMON_PORT } from '@wh/shared'
 import type { Preset } from './presets'
 
+export interface SlackConfig {
+  clientId: string
+  clientSecret: string
+  /** Slack team allowed to sign in. Empty = pinned on first successful login. */
+  allowedTeamId: string
+  /** HTTPS port for the OAuth callback listener. */
+  httpsPort: number
+  /** Hostname browsers use to reach this daemon (Tailscale name on the office PC). */
+  publicHost: string
+}
+
 export interface HubConfig {
   host: string
   port: number
+  slack?: SlackConfig
   /** token -> username. Filled with a generated dev token on first run. */
   tokens: Record<string, string>
   /**
@@ -48,4 +60,8 @@ export function loadConfig(): HubConfig {
   }
   fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
   return config
+}
+
+export function saveConfig(config: HubConfig) {
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
 }

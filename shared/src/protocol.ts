@@ -39,6 +39,7 @@ export interface CreateSessionRequest {
 
 export type ClientMsg =
   | { t: 'hello'; token: string; client?: string }
+  | { t: 'login-start' }
   | { t: 'list' }
   | ({ t: 'create' } & CreateSessionRequest)
   | { t: 'attach'; sessionId: string; cols: number; rows: number }
@@ -50,6 +51,8 @@ export type ClientMsg =
 
 export type ServerMsg =
   | { t: 'hello-ok'; user: string; sessions: SessionInfo[]; presets: PresetInfo[] }
+  | { t: 'login-url'; url: string }
+  | { t: 'login-ok'; token: string; user: string }
   | { t: 'error'; message: string }
   | { t: 'sessions'; sessions: SessionInfo[] }
   | { t: 'created'; session: SessionInfo }

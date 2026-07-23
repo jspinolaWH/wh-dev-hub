@@ -57,15 +57,30 @@ export function App() {
     [client, creating],
   )
 
-  const connect = () => {
+  const connect = (viaSlack = false) => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
     setConnError(undefined)
-    client.connect(settings.url, settings.token, (s, error) => {
-      setConnState(s)
-      if (error) setConnError(error)
-      if (s === 'connected') setSessions(client.sessions)
-      if (s === 'disconnected') setSelectedId(undefined)
-    })
+    client.connect(
+      settings.url,
+      settings.token,
+      (s, error) => {
+        setConnState(s)
+        if (error) setConnError(error)
+        if (s === 'connected') setSessions(client.sessions)
+        if (s === 'disconnected') setSelectedId(undefined)
+      },
+      viaSlack
+        ? {
+            slack: true,
+            onLoginUrl: (url) => openLink(url),
+            onToken: (token) => {
+              const next = { ...settings, token }
+              setSettings(next)
+              localStorage.setItem(SETTINGS_KEY, JSON.stringify(next))
+            },
+          }
+        : undefined,
+    )
   }
 
   const selected = sessions.find((s) => s.id === selectedId)
@@ -85,7 +100,8 @@ export function App() {
           <ConnectForm
             settings={settings}
             setSettings={setSettings}
-            onConnect={connect}
+            onConnect={() => connect(false)}
+            onSlack={() => connect(true)}
             connecting={connState === 'connecting'}
             error={connError}
           />
@@ -156,10 +172,11 @@ function ConnectForm(props: {
   settings: Settings
   setSettings: (s: Settings) => void
   onConnect: () => void
+  onSlack: () => void
   connecting: boolean
   error?: string
 }) {
-  const { settings, setSettings, onConnect, connecting, error } = props
+  const { settings, setSettings, onConnect, onSlack, connecting, error } = props
   return (
     <div className="connect-form">
       <label>
@@ -170,18 +187,24 @@ function ConnectForm(props: {
           placeholder="ws://office-pc:7811"
         />
       </label>
-      <label>
-        Access token
-        <input
-          type="password"
-          value={settings.token}
-          onChange={(e) => setSettings({ ...settings, token: e.target.value })}
-          placeholder="token from daemon config"
-        />
-      </label>
-      <button className="btn primary" onClick={onConnect} disabled={connecting}>
-        {connecting ? 'Connecting…' : 'Connect'}
+      <button className="btn primary" onClick={onSlack} disabled={connecting}>
+        {connecting ? 'Connecting…' : 'Sign in with Slack'}
       </button>
+      <details>
+        <summary className="muted-summary">Connect with a token instead</summary>
+        <label>
+          Access token
+          <input
+            type="password"
+            value={settings.token}
+            onChange={(e) => setSettings({ ...settings, token: e.target.value })}
+            placeholder="token from daemon config"
+          />
+        </label>
+        <button className="btn" onClick={onConnect} disabled={connecting || !settings.token}>
+          Connect with token
+        </button>
+      </details>
       {error && <div className="error">{error}</div>}
     </div>
   )
