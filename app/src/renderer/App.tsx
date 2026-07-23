@@ -27,6 +27,7 @@ export function App() {
   const [connState, setConnState] = useState<ConnState>('disconnected')
   const [connError, setConnError] = useState<string>()
   const [loginUrl, setLoginUrl] = useState<string>()
+  const [toast, setToast] = useState<string>()
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [presets, setPresets] = useState<PresetInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>()
@@ -45,9 +46,13 @@ export function App() {
           setCreating(false)
           setCreateError(undefined)
         }
-        if (msg.t === 'error' && creating) {
-          setCreating(false)
-          setCreateError(msg.message)
+        if (msg.t === 'error') {
+          if (creating) {
+            setCreating(false)
+            setCreateError(msg.message)
+          } else {
+            setToast(msg.message)
+          }
         }
         if (msg.t === 'notification') {
           const alreadyLooking = document.hasFocus() && selectedId === msg.sessionId
@@ -62,6 +67,12 @@ export function App() {
       }),
     [client, creating, selectedId],
   )
+
+  useEffect(() => {
+    if (!toast) return
+    const t = setTimeout(() => setToast(undefined), 6000)
+    return () => clearTimeout(t)
+  }, [toast])
 
   const connect = (viaSlack = false) => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
@@ -131,6 +142,10 @@ export function App() {
                   selected={s.id === selectedId}
                   onSelect={() => setSelectedId(s.id)}
                   onKill={() => client.send({ t: 'kill', sessionId: s.id })}
+                  onRelaunch={() => {
+                    setSelectedId(s.id)
+                    client.send({ t: 'relaunch', sessionId: s.id, cols: 120, rows: 30 })
+                  }}
                   onRemove={() => {
                     client.send({ t: 'remove', sessionId: s.id })
                     if (selectedId === s.id) setSelectedId(undefined)
@@ -144,18 +159,38 @@ export function App() {
       </aside>
 
       <main className="main">
-        {selected && selected.status !== 'lost' ? (
-          <TerminalView key={selected.id} client={client} sessionId={selected.id} />
+        {selected && selected.status === 'lost' ? (
+          <div className="placeholder">
+            <div>
+              This session was lost when the daemon restarted.
+              <br />
+              Relaunch it to run <code>{selected.name}</code> again in {selected.cwd}.
+              <div style={{ marginTop: 14 }}>
+                <button
+                  className="btn primary"
+                  onClick={() => client.send({ t: 'relaunch', sessionId: selected.id, cols: 120, rows: 30 })}
+                >
+                  Relaunch session
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : selected ? (
+          <TerminalView key={`${selected.id}:${selected.generation}`} client={client} sessionId={selected.id} />
         ) : (
           <div className="placeholder">
             {connState === 'connected'
-              ? selected?.status === 'lost'
-                ? 'This session was lost in a daemon restart. Remove it, or recreate it (resume support coming).'
-                : 'Select or create a session — it keeps running on the host even when you close this app.'
+              ? 'Select or create a session — it keeps running on the host even when you close this app.'
               : 'Connect to a WasteHero Dev Hub daemon to get started.'}
           </div>
         )}
       </main>
+
+      {toast && (
+        <div className="toast" onClick={() => setToast(undefined)}>
+          {toast} <span className="toast-dismiss">×</span>
+        </div>
+      )}
 
       {showCreate && (
         <CreateDialog
@@ -238,9 +273,10 @@ function SessionCard(props: {
   selected: boolean
   onSelect: () => void
   onKill: () => void
+  onRelaunch: () => void
   onRemove: () => void
 }) {
-  const { session: s, selected, onSelect, onKill, onRemove } = props
+  const { session: s, selected, onSelect, onKill, onRelaunch, onRemove } = props
   return (
     <div className={`session-card ${selected ? 'selected' : ''}`} onClick={onSelect}>
       <div className="session-top">
@@ -267,9 +303,14 @@ function SessionCard(props: {
             kill
           </button>
         ) : (
-          <button className="btn tiny" onClick={(e) => (e.stopPropagation(), onRemove())}>
-            remove
-          </button>
+          <>
+            <button className="btn tiny" onClick={(e) => (e.stopPropagation(), onRelaunch())}>
+              relaunch
+            </button>
+            <button className="btn tiny" onClick={(e) => (e.stopPropagation(), onRemove())}>
+              remove
+            </button>
+          </>
         )}
       </div>
     </div>

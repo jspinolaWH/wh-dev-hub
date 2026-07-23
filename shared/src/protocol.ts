@@ -18,6 +18,8 @@ export interface SessionInfo {
   createdAt: string
   attachedClients: number
   links: SessionLink[]
+  /** Increments on each (re)launch so the client remounts the terminal. */
+  generation: number
 }
 
 export interface PresetInfo {
@@ -43,6 +45,7 @@ export type ClientMsg =
   | { t: 'list' }
   | ({ t: 'create' } & CreateSessionRequest)
   | { t: 'attach'; sessionId: string; cols: number; rows: number }
+  | { t: 'relaunch'; sessionId: string; cols: number; rows: number }
   | { t: 'detach'; sessionId: string }
   | { t: 'input'; sessionId: string; data: string }
   | { t: 'resize'; sessionId: string; cols: number; rows: number }

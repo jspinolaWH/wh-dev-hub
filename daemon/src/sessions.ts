@@ -16,6 +16,10 @@ interface SessionMeta {
   createdAt: string
   links: SessionLink[]
   ports: number[]
+  /** Extra env (user profile + preset vars) needed to respawn on relaunch. */
+  env: Record<string, string>
+  /** Bumped on each (re)launch so clients know to remount the terminal. */
+  generation: number
 }
 
 export interface SpawnSpec {
@@ -106,6 +110,7 @@ export class SessionManager extends EventEmitter {
       createdAt: s.meta.createdAt,
       attachedClients: s.attachedClients,
       links: s.meta.links,
+      generation: s.meta.generation,
     }
   }
 
@@ -114,6 +119,57 @@ export class SessionManager extends EventEmitter {
     const command = spec.command.trim()
     if (!fs.existsSync(spec.cwd)) throw new Error(`cwd does not exist: ${spec.cwd}`)
 
+    const session: Session = {
+      meta: {
+        id,
+        name: spec.name || command || 'shell',
+        cwd: spec.cwd,
+        command,
+        owner: spec.owner,
+        createdAt: new Date().toISOString(),
+        links: spec.links,
+        ports: spec.ports,
+        env: spec.env,
+        generation: 0,
+      },
+      proc: null,
+      status: 'exited',
+      scrollback: [],
+      scrollbackLen: 0,
+      attachedClients: 0,
+      activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
+    }
+    this.sessions.set(id, session)
+    this.spawn(session, spec.cols, spec.rows)
+    return this.toInfo(session)
+  }
+
+  /**
+   * Re-run an exited or lost session in place, preserving its id, cwd,
+   * command and env. Fixes both accidental exits (double Ctrl-C) and
+   * sessions lost to a daemon restart.
+   */
+  relaunch(id: string, cols: number, rows: number): SessionInfo {
+    const session = this.mustGet(id)
+    if (session.status === 'running') throw new Error('session is already running')
+    if (!fs.existsSync(session.meta.cwd)) throw new Error(`cwd no longer exists: ${session.meta.cwd}`)
+    // Re-lease the same ports if still free (best effort; presets only).
+    for (const port of session.meta.ports) {
+      try {
+        this.allocator.reserve(port)
+      } catch {
+        /* port taken now; the app inside may fail — acceptable edge */
+      }
+    }
+    const marker = `\r\n\x1b[38;2;117;189;234m--- relaunched ${new Date().toISOString()} ---\x1b[0m\r\n`
+    this.appendScrollback(session, marker)
+    this.spawn(session, cols, rows)
+    return this.toInfo(session)
+  }
+
+  /** (Re)spawn the pty for a session using its stored meta. */
+  private spawn(session: Session, cols: number, rows: number) {
+    const { command, cwd, env } = session.meta
     const isWin = process.platform === 'win32'
     const shell = isWin ? process.env.ComSpec ?? 'cmd.exe' : '/bin/bash'
     // Empty command => interactive shell, so the user can run anything
@@ -147,33 +203,20 @@ export class SessionManager extends EventEmitter {
 
     const proc = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
-      cols: spec.cols,
-      rows: spec.rows,
-      cwd: spec.cwd,
-      env: { ...baseEnv, ...spec.env },
+      cols,
+      rows,
+      cwd,
+      env: { ...baseEnv, ...env },
     })
 
-    const session: Session = {
-      meta: {
-        id,
-        name: spec.name || command || 'shell',
-        cwd: spec.cwd,
-        command,
-        owner: spec.owner,
-        createdAt: new Date().toISOString(),
-        links: spec.links,
-        ports: spec.ports,
-      },
-      proc,
-      status: 'running',
-      scrollback: [],
-      scrollbackLen: 0,
-      attachedClients: 0,
-      activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
-    }
-    this.sessions.set(id, session)
+    session.proc = proc
+    session.status = 'running'
+    session.exitCode = undefined
+    session.meta.generation += 1
+    session.activity = { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 }
     this.persistMeta()
 
+    const id = session.meta.id
     proc.onData((data) => {
       this.appendScrollback(session, data)
       this.trackActivity(session, data)
@@ -191,7 +234,6 @@ export class SessionManager extends EventEmitter {
     })
 
     this.emit('changed')
-    return this.toInfo(session)
   }
 
   /**

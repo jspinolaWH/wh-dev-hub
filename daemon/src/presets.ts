@@ -46,6 +46,16 @@ export class PortAllocator {
   release(ports: number[]) {
     for (const p of ports) this.leased.delete(p)
   }
+
+  /**
+   * Optimistically re-claim a specific port when relaunching a session.
+   * Synchronous and best-effort: it does not probe the OS (the caller
+   * tolerates the port being taken), it just avoids double-leasing.
+   */
+  reserve(port: number) {
+    if (this.leased.has(port)) throw new Error(`port ${port} already leased`)
+    this.leased.add(port)
+  }
 }
 
 export interface ResolvedPreset {

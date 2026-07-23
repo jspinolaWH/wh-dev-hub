@@ -158,6 +158,11 @@ export function startServer(opts: {
             state.attached.add(msg.sessionId)
             return send(ws, { t: 'attached', sessionId: msg.sessionId, scrollback })
           }
+          case 'relaunch': {
+            mustOwn(msg.sessionId)
+            sessions.relaunch(msg.sessionId, msg.cols, msg.rows)
+            return
+          }
           case 'detach':
             if (state.attached.delete(msg.sessionId)) sessions.detach(msg.sessionId)
             return
