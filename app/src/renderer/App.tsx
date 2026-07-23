@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { PresetInfo, SessionInfo } from '@wh/shared'
 import { HubClient, type ConnState } from './hubClient'
 import { TerminalView } from './TerminalView'
+import whMark from './assets/wh-mark.svg'
 
 declare global {
   interface Window {
@@ -103,7 +104,7 @@ export function App() {
     <div className="app">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">WH</div>
+          <img className="brand-mark" src={whMark} alt="WasteHero" />
           <div>
             <div className="brand-name">WasteHero</div>
             <div className="brand-sub">Dev Hub</div>

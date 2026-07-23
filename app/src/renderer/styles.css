@@ -9,7 +9,8 @@
   --border: #223350;
   --text: #d7e0ea;
   --muted: #8296ad;
-  --accent: #3fd08c; /* placeholder until real WasteHero brand tokens land */
+  --accent: #df9838; /* WasteHero brand orange */
+  --accent-text: #2a1c05;
   --danger: #e5636c;
 }
 
@@ -56,14 +57,8 @@ body {
 
 .brand-mark {
   width: 38px;
-  height: 38px;
-  border-radius: 9px;
-  background: var(--accent);
-  color: #06251a;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  height: 43px;
+  border-radius: 6px;
 }
 
 .brand-name {
@@ -175,7 +170,7 @@ select {
 .btn.primary {
   background: var(--accent);
   border-color: var(--accent);
-  color: #06251a;
+  color: var(--accent-text);
   font-weight: 600;
 }
 
