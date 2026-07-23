@@ -26,14 +26,25 @@ export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [showCreate, setShowCreate] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string>()
 
   useEffect(
     () =>
       client.onMessage((msg) => {
         if (msg.t === 'hello-ok' || msg.t === 'sessions') setSessions(client.sessions)
-        if (msg.t === 'created') setSelectedId(msg.session.id)
+        if (msg.t === 'created') {
+          setSelectedId(msg.session.id)
+          setShowCreate(false)
+          setCreating(false)
+          setCreateError(undefined)
+        }
+        if (msg.t === 'error' && creating) {
+          setCreating(false)
+          setCreateError(msg.message)
+        }
       }),
-    [client],
+    [client, creating],
   )
 
   const connect = () => {
@@ -112,10 +123,17 @@ export function App() {
 
       {showCreate && (
         <CreateDialog
-          onClose={() => setShowCreate(false)}
-          onCreate={(name, cwd, command) => {
-            client.send({ t: 'create', name, cwd, command, cols: 120, rows: 30 })
+          busy={creating}
+          error={createError}
+          onClose={() => {
             setShowCreate(false)
+            setCreating(false)
+            setCreateError(undefined)
+          }}
+          onCreate={(name, cwd, command) => {
+            setCreating(true)
+            setCreateError(undefined)
+            client.send({ t: 'create', name, cwd, command, cols: 120, rows: 30 })
           }}
         />
       )}
@@ -192,7 +210,12 @@ function SessionCard(props: {
   )
 }
 
-function CreateDialog(props: { onClose: () => void; onCreate: (name: string, cwd: string, command: string) => void }) {
+function CreateDialog(props: {
+  busy: boolean
+  error?: string
+  onClose: () => void
+  onCreate: (name: string, cwd: string, command: string) => void
+}) {
   const [name, setName] = useState('')
   const [cwd, setCwd] = useState('')
   const [command, setCommand] = useState('claude')
@@ -208,19 +231,24 @@ function CreateDialog(props: { onClose: () => void; onCreate: (name: string, cwd
           <input ref={nameRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="invoicing loop" />
         </label>
         <label>
-          Working directory (on the host)
-          <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder="C:\\repos\\wastehero" />
+          Working directory (a folder on the host machine)
+          <input value={cwd} onChange={(e) => setCwd(e.target.value)} placeholder={'C:\\Users\\drasm\\Desktop\\wasteheroRepo'} />
         </label>
         <label>
           Command
           <input value={command} onChange={(e) => setCommand(e.target.value)} />
         </label>
+        {props.error && <div className="error">{props.error}</div>}
         <div className="modal-actions">
           <button className="btn" onClick={props.onClose}>
             Cancel
           </button>
-          <button className="btn primary" disabled={!cwd.trim()} onClick={() => props.onCreate(name, cwd.trim(), command)}>
-            Create
+          <button
+            className="btn primary"
+            disabled={!cwd.trim() || props.busy}
+            onClick={() => props.onCreate(name, cwd.trim(), command)}
+          >
+            {props.busy ? 'Creating…' : 'Create'}
           </button>
         </div>
       </div>
