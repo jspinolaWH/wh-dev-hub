@@ -130,6 +130,12 @@ export class SessionManager extends EventEmitter {
       if (k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_')) continue
       baseEnv[k] = v
     }
+    // xterm.js compatibility: Claude Code's fullscreen renderer + kitty
+    // keyboard / mouse capture negotiation freezes input under our xterm.js
+    // client (per code.claude.com/docs/en/fullscreen.md troubleshooting).
+    // Force the classic renderer and plain key encoding for hub sessions.
+    baseEnv.CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = '1'
+    baseEnv.CLAUDE_CODE_DISABLE_MOUSE = '1'
 
     const proc = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
