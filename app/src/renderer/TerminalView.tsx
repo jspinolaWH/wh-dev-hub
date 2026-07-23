@@ -3,6 +3,12 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { HubClient } from './hubClient'
 
+const readClipboard = async (): Promise<string> =>
+  window.wh?.readClipboard ? window.wh.readClipboard() : navigator.clipboard.readText()
+
+const writeClipboard = (text: string) =>
+  window.wh?.writeClipboard ? window.wh.writeClipboard(text) : navigator.clipboard.writeText(text)
+
 export function TerminalView({ client, sessionId }: { client: HubClient; sessionId: string }) {
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -38,6 +44,42 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
 
     const offInput = term.onData((data) => client.send({ t: 'input', sessionId, data }))
 
+    const paste = () => {
+      readClipboard().then((text) => {
+        if (text) client.send({ t: 'input', sessionId, data: text })
+      })
+    }
+
+    // Ctrl+V / Ctrl+Shift+V paste; Ctrl+Shift+C copies the selection.
+    // Plain Ctrl+C stays SIGINT for the terminal.
+    term.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== 'keydown') return true
+      if (ev.ctrlKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
+        paste()
+        return false
+      }
+      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'c' || ev.key === 'C')) {
+        const sel = term.getSelection()
+        if (sel) writeClipboard(sel)
+        return false
+      }
+      return true
+    })
+
+    // Right-click: copy the selection if there is one, otherwise paste —
+    // the convention most Windows terminals follow.
+    const onContextMenu = (ev: MouseEvent) => {
+      ev.preventDefault()
+      const sel = term.getSelection()
+      if (sel) {
+        writeClipboard(sel)
+        term.clearSelection()
+      } else {
+        paste()
+      }
+    }
+    el.addEventListener('contextmenu', onContextMenu)
+
     // Debounced, change-only resize: a resize makes TUI apps repaint the
     // whole screen, so firing it on every observer tick causes a flicker
     // loop when scrollbars toggle the container size by a pixel.
@@ -59,6 +101,7 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     term.focus()
 
     return () => {
+      el.removeEventListener('contextmenu', onContextMenu)
       clearTimeout(resizeTimer)
       resizeObserver.disconnect()
       offInput.dispose()

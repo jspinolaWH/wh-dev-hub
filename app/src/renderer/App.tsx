@@ -4,12 +4,6 @@ import { HubClient, type ConnState } from './hubClient'
 import { TerminalView } from './TerminalView'
 import whMark from './assets/wh-mark.svg'
 
-declare global {
-  interface Window {
-    wh?: { openExternal: (url: string) => void }
-  }
-}
-
 const openLink = (url: string) => (window.wh ? window.wh.openExternal(url) : window.open(url))
 
 const SETTINGS_KEY = 'wh-hub-settings'
