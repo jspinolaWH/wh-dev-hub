@@ -1,0 +1,15 @@
+{
+  "name": "wh-dev-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "WasteHero Dev Hub — persistent Claude Code session host + branded client",
+  "workspaces": [
+    "shared",
+    "daemon",
+    "app"
+  ],
+  "scripts": {
+    "daemon": "npm run dev -w daemon",
+    "app": "npm run dev -w app"
+  }
+}

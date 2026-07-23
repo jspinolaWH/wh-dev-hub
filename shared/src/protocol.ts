@@ -1,0 +1,53 @@
+// Wire protocol between the WH Dev Hub daemon and clients.
+// All messages are JSON text frames over a single WebSocket.
+
+export interface SessionLink {
+  label: string
+  url: string
+}
+
+export type SessionStatus = 'running' | 'exited' | 'lost'
+
+export interface SessionInfo {
+  id: string
+  name: string
+  cwd: string
+  owner: string
+  status: SessionStatus
+  exitCode?: number
+  createdAt: string
+  attachedClients: number
+  links: SessionLink[]
+}
+
+export interface CreateSessionRequest {
+  name: string
+  cwd: string
+  /** Full command line; defaults to `claude` when omitted. */
+  command?: string
+  cols: number
+  rows: number
+}
+
+export type ClientMsg =
+  | { t: 'hello'; token: string; client?: string }
+  | { t: 'list' }
+  | ({ t: 'create' } & CreateSessionRequest)
+  | { t: 'attach'; sessionId: string; cols: number; rows: number }
+  | { t: 'detach'; sessionId: string }
+  | { t: 'input'; sessionId: string; data: string }
+  | { t: 'resize'; sessionId: string; cols: number; rows: number }
+  | { t: 'kill'; sessionId: string }
+  | { t: 'remove'; sessionId: string }
+
+export type ServerMsg =
+  | { t: 'hello-ok'; user: string; sessions: SessionInfo[] }
+  | { t: 'error'; message: string }
+  | { t: 'sessions'; sessions: SessionInfo[] }
+  | { t: 'created'; session: SessionInfo }
+  | { t: 'attached'; sessionId: string; scrollback: string }
+  | { t: 'output'; sessionId: string; data: string }
+  | { t: 'exit'; sessionId: string; exitCode: number }
+  | { t: 'notification'; sessionId: string; kind: string; message: string }
+
+export const DEFAULT_DAEMON_PORT = 7811

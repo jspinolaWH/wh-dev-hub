@@ -1,0 +1,47 @@
+import fs from 'node:fs'
+import path from 'node:path'
+import crypto from 'node:crypto'
+import { DEFAULT_DAEMON_PORT } from '@wh/shared'
+
+export interface HubConfig {
+  host: string
+  port: number
+  /** token -> username. Filled with a generated dev token on first run. */
+  tokens: Record<string, string>
+  /**
+   * Users who reuse the daemon host's own Claude login instead of an
+   * isolated per-user profile (handy on a dev laptop).
+   */
+  inheritHostClaudeLogin: string[]
+  /** Max scrollback kept per session, in characters. */
+  scrollbackChars: number
+}
+
+export const DATA_DIR = process.env.WH_HUB_DATA
+  ? path.resolve(process.env.WH_HUB_DATA)
+  : path.join(process.cwd(), 'data')
+
+const CONFIG_PATH = path.join(DATA_DIR, 'config.json')
+
+const DEFAULTS: HubConfig = {
+  host: '127.0.0.1',
+  port: DEFAULT_DAEMON_PORT,
+  tokens: {},
+  inheritHostClaudeLogin: ['dev'],
+  scrollbackChars: 2_000_000,
+}
+
+export function loadConfig(): HubConfig {
+  fs.mkdirSync(DATA_DIR, { recursive: true })
+  let onDisk: Partial<HubConfig> = {}
+  if (fs.existsSync(CONFIG_PATH)) {
+    onDisk = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
+  }
+  const config: HubConfig = { ...DEFAULTS, ...onDisk }
+  if (Object.keys(config.tokens).length === 0) {
+    const token = crypto.randomBytes(16).toString('hex')
+    config.tokens = { [token]: 'dev' }
+  }
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2))
+  return config
+}
