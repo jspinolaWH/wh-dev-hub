@@ -13,7 +13,7 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     const term = new Terminal({
       fontFamily: 'Cascadia Mono, Consolas, monospace',
       fontSize: 14,
-      theme: { background: '#0b1220', foreground: '#d7e0ea', cursor: '#df9838' },
+      theme: { background: '#0b1220', foreground: '#d7e0ea', cursor: '#75bdea' },
       scrollback: 20000,
       // Hosts are Windows; tells xterm the source is ConPTY so it handles
       // its full-screen repaints and reflow correctly.
