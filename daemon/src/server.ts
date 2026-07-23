@@ -58,6 +58,11 @@ export function startServer(opts: {
       if (state.user) send(ws, { t: 'exit', sessionId, exitCode })
     }
   })
+  sessions.on('notification', (sessionId: string, kind: string, message: string) => {
+    for (const [ws, state] of clients) {
+      if (state.user) send(ws, { t: 'notification', sessionId, kind, message })
+    }
+  })
 
   slackAuth?.on('login', (loginState: string, token: string, user: string) => {
     for (const [ws, state] of clients) {

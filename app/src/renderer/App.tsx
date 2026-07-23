@@ -54,8 +54,18 @@ export function App() {
           setCreating(false)
           setCreateError(msg.message)
         }
+        if (msg.t === 'notification') {
+          const alreadyLooking = document.hasFocus() && selectedId === msg.sessionId
+          if (!alreadyLooking) {
+            const n = new Notification('WasteHero Dev Hub', { body: msg.message })
+            n.onclick = () => {
+              window.focus()
+              setSelectedId(msg.sessionId)
+            }
+          }
+        }
       }),
-    [client, creating],
+    [client, creating, selectedId],
   )
 
   const connect = (viaSlack = false) => {

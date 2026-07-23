@@ -38,6 +38,12 @@ interface Session {
   scrollback: string[]
   scrollbackLen: number
   attachedClients: number
+  activity: {
+    lastOutputAt: number
+    activeSince: number
+    lastBellAt: number
+    idleTimer?: ReturnType<typeof setTimeout>
+  }
 }
 
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json')
@@ -72,6 +78,7 @@ export class SessionManager extends EventEmitter {
           scrollback: [],
           scrollbackLen: 0,
           attachedClients: 0,
+          activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
         })
       }
     } catch (err) {
@@ -148,25 +155,54 @@ export class SessionManager extends EventEmitter {
       scrollback: [],
       scrollbackLen: 0,
       attachedClients: 0,
+      activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
     }
     this.sessions.set(id, session)
     this.persistMeta()
 
     proc.onData((data) => {
       this.appendScrollback(session, data)
+      this.trackActivity(session, data)
       this.emit('output', id, data)
     })
     proc.onExit(({ exitCode }) => {
       session.status = 'exited'
       session.exitCode = exitCode
       session.proc = null
+      clearTimeout(session.activity.idleTimer)
       this.allocator.release(session.meta.ports)
       this.emit('exit', id, exitCode)
+      this.emit('notification', id, 'exit', `${session.meta.name}: session exited (code ${exitCode})`)
       this.emit('changed')
     })
 
     this.emit('changed')
     return this.toInfo(session)
+  }
+
+  /**
+   * Config-free attention detection:
+   * - terminal BEL -> Claude explicitly asks for attention
+   * - sustained output (>8s of work) followed by >20s of silence -> the
+   *   loop finished or a permission prompt is waiting for input
+   */
+  private trackActivity(s: Session, data: string) {
+    const a = s.activity
+    const now = Date.now()
+    if (now - a.lastOutputAt > 5000) a.activeSince = now
+    a.lastOutputAt = now
+
+    if (data.includes('\x07') && now - a.lastBellAt > 10_000) {
+      a.lastBellAt = now
+      this.emit('notification', s.meta.id, 'attention', `${s.meta.name}: Claude needs your attention`)
+    }
+
+    clearTimeout(a.idleTimer)
+    a.idleTimer = setTimeout(() => {
+      if (s.status === 'running' && a.lastOutputAt - a.activeSince > 8000) {
+        this.emit('notification', s.meta.id, 'idle', `${s.meta.name}: finished working — waiting for you`)
+      }
+    }, 20_000)
   }
 
   private appendScrollback(s: Session, data: string) {
