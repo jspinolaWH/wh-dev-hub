@@ -286,12 +286,22 @@ function CreateDialog(props: {
   const [name, setName] = useState('')
   const [presetId, setPresetId] = useState('')
   const [cwd, setCwd] = useState('')
-  const [command, setCommand] = useState('claude')
+  // Launch mode maps to the command sent to the daemon.
+  // '' = interactive shell (run claude/claude --resume/git yourself).
+  const LAUNCH: Record<string, string> = {
+    claude: 'claude',
+    resume: 'claude --resume',
+    shell: '',
+    custom: '',
+  }
+  const [launch, setLaunch] = useState<keyof typeof LAUNCH>('claude')
+  const [customCommand, setCustomCommand] = useState('')
   const nameRef = useRef<HTMLInputElement>(null)
   useEffect(() => nameRef.current?.focus(), [])
 
+  const command = launch === 'custom' ? customCommand : LAUNCH[launch]
   const preset = props.presets.find((p) => p.id === presetId)
-  const valid = preset ? true : !!cwd.trim()
+  const valid = preset ? true : !!cwd.trim() && (launch !== 'custom' || !!customCommand.trim())
 
   return (
     <div className="modal-backdrop" onClick={props.onClose}>
@@ -327,9 +337,24 @@ function CreateDialog(props: {
               />
             </label>
             <label>
-              Command
-              <input value={command} onChange={(e) => setCommand(e.target.value)} />
+              Start with
+              <select value={launch} onChange={(e) => setLaunch(e.target.value as keyof typeof LAUNCH)}>
+                <option value="claude">Claude (fresh)</option>
+                <option value="resume">Claude — resume last session</option>
+                <option value="shell">Shell (type your own commands)</option>
+                <option value="custom">Custom command…</option>
+              </select>
             </label>
+            {launch === 'custom' && (
+              <label>
+                Command
+                <input
+                  value={customCommand}
+                  onChange={(e) => setCustomCommand(e.target.value)}
+                  placeholder="npm run dev"
+                />
+              </label>
+            )}
           </>
         )}
         {props.error && <div className="error">{props.error}</div>}

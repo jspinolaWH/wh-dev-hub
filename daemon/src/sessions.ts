@@ -111,15 +111,23 @@ export class SessionManager extends EventEmitter {
 
   create(spec: SpawnSpec): SessionInfo {
     const id = crypto.randomBytes(6).toString('hex')
-    const command = spec.command.trim() || 'claude'
+    const command = spec.command.trim()
     if (!fs.existsSync(spec.cwd)) throw new Error(`cwd does not exist: ${spec.cwd}`)
 
     const isWin = process.platform === 'win32'
     const shell = isWin ? process.env.ComSpec ?? 'cmd.exe' : '/bin/bash'
-    // On Windows the full command line must be one string ("/s" strips the
-    // outer quotes); an args array gets re-quoted by node-pty and mangles
-    // commands that contain their own quotes.
-    const shellArgs: string | string[] = isWin ? `/d /s /c "${command}"` : ['-lc', command]
+    // Empty command => interactive shell, so the user can run anything
+    // (claude, claude --resume, git, docker...) before/instead of Claude.
+    // With a command, run it in the shell: on Windows the full command line
+    // must be one string ("/s" strips the outer quotes); an args array gets
+    // re-quoted by node-pty and mangles commands that contain their own quotes.
+    const shellArgs: string | string[] = command
+      ? isWin
+        ? `/d /s /c "${command}"`
+        : ['-lc', command]
+      : isWin
+        ? []
+        : ['-i']
 
     // Scrub Claude-session markers the daemon may have inherited (e.g. when
     // started from inside a Claude session in dev) — otherwise child claudes
@@ -148,7 +156,7 @@ export class SessionManager extends EventEmitter {
     const session: Session = {
       meta: {
         id,
-        name: spec.name || command,
+        name: spec.name || command || 'shell',
         cwd: spec.cwd,
         command,
         owner: spec.owner,
