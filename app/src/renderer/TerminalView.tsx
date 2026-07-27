@@ -50,18 +50,28 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
       })
     }
 
-    // Ctrl+V / Ctrl+Shift+V paste; Ctrl+Shift+C copies the selection.
-    // Plain Ctrl+C stays SIGINT for the terminal.
+    // Clipboard keys, matching Windows Terminal / VS Code conventions:
+    // - Ctrl+V / Ctrl+Shift+V     -> paste
+    // - Ctrl+Shift+C              -> copy selection (always)
+    // - Ctrl+C WITH a selection   -> copy it (and clear), like on Windows
+    // - Ctrl+C with NO selection  -> falls through as SIGINT (interrupt)
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
       if (ev.ctrlKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
         paste()
         return false
       }
-      if (ev.ctrlKey && ev.shiftKey && (ev.key === 'c' || ev.key === 'C')) {
+      const isCopyKey =
+        ev.ctrlKey && !ev.altKey && (ev.key === 'c' || ev.key === 'C') && (ev.shiftKey || term.hasSelection())
+      if (isCopyKey) {
         const sel = term.getSelection()
-        if (sel) writeClipboard(sel)
-        return false
+        if (sel) {
+          writeClipboard(sel)
+          term.clearSelection()
+          return false // consumed as copy
+        }
+        if (ev.shiftKey) return false // Ctrl+Shift+C with nothing selected: no-op
+        // plain Ctrl+C with no selection: fall through to SIGINT
       }
       return true
     })
