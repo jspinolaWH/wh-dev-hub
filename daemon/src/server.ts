@@ -23,16 +23,26 @@ export function startServer(opts: {
   presets: Preset[]
   allocator: PortAllocator
   slackAuth?: SlackAuth
+  tailnetHost?: string
 }) {
-  const { host, port, auth, sessions, inheritHostClaudeLogin, presets, allocator, slackAuth } = opts
+  const { host, port, auth, sessions, inheritHostClaudeLogin, presets, allocator, slackAuth, tailnetHost } = opts
   const presetInfos = presets.map((p) => ({ id: p.id, name: p.name, description: p.description }))
+
+  // Injected into every session so anything started here can be reached from
+  // teammates' machines over Tailscale: bind servers to WH_BIND_HOST, and
+  // point frontends' API/WS base URLs at WH_TAILNET_HOST (never localhost —
+  // the browser runs on the user's machine, not the host). RemoteServer's
+  // CLAUDE.md documents these as standing rules.
+  const tunnelEnv: Record<string, string> = { WH_BIND_HOST: '0.0.0.0' }
+  if (tailnetHost) tunnelEnv.WH_TAILNET_HOST = tailnetHost
 
   /** Isolated Claude profile per user so each teammate has their own login. */
   const envForUser = (user: string): Record<string, string> => {
-    if (inheritHostClaudeLogin.includes(user)) return {}
+    const base = { ...tunnelEnv }
+    if (inheritHostClaudeLogin.includes(user)) return base
     const profileDir = path.join(DATA_DIR, 'profiles', user, 'claude')
     fs.mkdirSync(profileDir, { recursive: true })
-    return { CLAUDE_CONFIG_DIR: profileDir }
+    return { ...base, CLAUDE_CONFIG_DIR: profileDir }
   }
   const wss = new WebSocketServer({ host, port })
   wss.on('error', (err) => console.error('[wh-dev-hub] wss error:', err))

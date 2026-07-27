@@ -31,6 +31,7 @@ startServer({
   presets: config.presets,
   allocator,
   slackAuth,
+  tailnetHost: config.slack?.publicHost,
 })
 
 console.log(`[wh-dev-hub] daemon listening on ws://${config.host}:${config.port}`)
