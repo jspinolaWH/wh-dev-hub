@@ -32,6 +32,24 @@ env var `WH_TAILNET_HOST` (this machine's Tailscale name).
   `http://${WH_TAILNET_HOST}:<backend-port>` — not `http://localhost:...`.
 - Do the same for websocket URLs (`ws://${WH_TAILNET_HOST}:<port>`).
 
+## 2b. Add the tailnet host to framework host-allowlists
+
+Modern dev servers reject requests whose `Host` header they don't recognize.
+When serving over the tailnet you MUST allowlist `WH_TAILNET_HOST` (a private
+tailnet, so wildcards are fine here):
+
+- **Vite:** `server.allowedHosts: ['.ts.net']` (or `true`) in the vite config,
+  or start with `--host` is NOT enough — the allowlist is separate. Symptom:
+  "Blocked request. This host (...) is not allowed."
+- **Django:** `ALLOWED_HOSTS` must include the tailnet host (or `['*']` for a
+  local/dev tenant). Symptom: `DisallowedHost` / HTTP 400. If POSTs fail CSRF,
+  also add `http://${WH_TAILNET_HOST}:<port>` to `CSRF_TRUSTED_ORIGINS`.
+- **Next.js / others:** check for an equivalent allowed-hosts / origins option.
+
+Prefer setting these via the dev `.env.local` / a dev settings override rather
+than editing tracked config, but on a throwaway clone in RemoteServer editing
+the config directly is fine (just don't commit it).
+
 ## 3. Use the reserved, already-open port ranges
 
 These ranges are permanently allowed through this machine's firewall for the
