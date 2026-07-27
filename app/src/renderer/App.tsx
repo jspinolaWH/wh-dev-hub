@@ -326,7 +326,7 @@ function CreateDialog(props: {
 }) {
   const [name, setName] = useState('')
   const [presetId, setPresetId] = useState('')
-  const [cwd, setCwd] = useState('')
+  const [cwd, setCwd] = useState('C:\\Users\\jacks\\Desktop\\RemoteServer')
   // Launch mode maps to the command sent to the daemon.
   // '' = interactive shell (run claude/claude --resume/git yourself).
   const LAUNCH: Record<string, string> = {
