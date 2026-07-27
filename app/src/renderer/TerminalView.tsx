@@ -44,9 +44,44 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
 
     const offInput = term.onData((data) => client.send({ t: 'input', sessionId, data }))
 
+    const sendImageBlob = (blob: Blob) => {
+      blob.arrayBuffer().then((buf) => {
+        const bytes = new Uint8Array(buf)
+        let bin = ''
+        const CHUNK = 0x8000
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+        }
+        client.send({ t: 'paste-image', sessionId, pngBase64: btoa(bin) })
+      })
+    }
+
+    // Native paste event (capture phase, before xterm) — the reliable way to
+    // get a pasted screenshot: the browser exposes it as an image/* item
+    // regardless of how it reached the clipboard (Snipping Tool, etc.). For
+    // images we consume the event and ferry the bytes; text falls through to
+    // xterm's own paste handling untouched.
+    const onPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items
+      if (!items) return
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]
+        if (it.kind === 'file' && it.type.startsWith('image/')) {
+          const blob = it.getAsFile()
+          if (blob) {
+            e.preventDefault()
+            e.stopImmediatePropagation()
+            sendImageBlob(blob)
+            return
+          }
+        }
+      }
+    }
+    el.addEventListener('paste', onPaste, true)
+
+    // Fallback paste for right-click / when no native event is available:
+    // main-process clipboard (image first, then text).
     const paste = () => {
-      // Image on the clipboard wins: ferry it to the host and let the session
-      // attach it by path. Otherwise paste text.
       const png = window.wh?.readClipboardImage?.() ?? ''
       if (png) {
         client.send({ t: 'paste-image', sessionId, pngBase64: png })
@@ -58,16 +93,13 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     }
 
     // Clipboard keys, matching Windows Terminal / VS Code conventions:
-    // - Ctrl+V / Ctrl+Shift+V     -> paste
+    // - Ctrl+V                    -> let the native paste event fire (handled
+    //                                above for images; xterm pastes text)
     // - Ctrl+Shift+C              -> copy selection (always)
     // - Ctrl+C WITH a selection   -> copy it (and clear), like on Windows
     // - Ctrl+C with NO selection  -> falls through as SIGINT (interrupt)
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
-      if (ev.ctrlKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
-        paste()
-        return false
-      }
       const isCopyKey =
         ev.ctrlKey && !ev.altKey && (ev.key === 'c' || ev.key === 'C') && (ev.shiftKey || term.hasSelection())
       if (isCopyKey) {
@@ -118,6 +150,7 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     term.focus()
 
     return () => {
+      el.removeEventListener('paste', onPaste, true)
       el.removeEventListener('contextmenu', onContextMenu)
       clearTimeout(resizeTimer)
       resizeObserver.disconnect()
