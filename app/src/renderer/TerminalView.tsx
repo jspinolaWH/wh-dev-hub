@@ -45,6 +45,13 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     const offInput = term.onData((data) => client.send({ t: 'input', sessionId, data }))
 
     const paste = () => {
+      // Image on the clipboard wins: ferry it to the host and let the session
+      // attach it by path. Otherwise paste text.
+      const png = window.wh?.readClipboardImage?.() ?? ''
+      if (png) {
+        client.send({ t: 'paste-image', sessionId, pngBase64: png })
+        return
+      }
       readClipboard().then((text) => {
         if (text) client.send({ t: 'input', sessionId, data: text })
       })

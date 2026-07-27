@@ -295,6 +295,19 @@ export class SessionManager extends EventEmitter {
     s.proc.write(data)
   }
 
+  /**
+   * Save a pasted image (PNG bytes) to a file on the host and return its
+   * absolute path, so it can be handed to the `claude` running in the session.
+   */
+  saveImage(id: string, png: Buffer): string {
+    this.mustGet(id)
+    const dir = path.join(DATA_DIR, 'pastes')
+    fs.mkdirSync(dir, { recursive: true })
+    const file = path.join(dir, `paste-${id}-${crypto.randomBytes(4).toString('hex')}.png`)
+    fs.writeFileSync(file, png)
+    return file
+  }
+
   resize(id: string, cols: number, rows: number) {
     const s = this.sessions.get(id)
     if (s?.proc) s.proc.resize(cols, rows)

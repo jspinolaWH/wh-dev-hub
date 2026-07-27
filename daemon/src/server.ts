@@ -196,6 +196,17 @@ export function startServer(opts: {
           case 'input':
             mustOwn(msg.sessionId)
             return sessions.input(msg.sessionId, msg.data)
+          case 'paste-image': {
+            mustOwn(msg.sessionId)
+            const png = Buffer.from(msg.pngBase64, 'base64')
+            const file = sessions.saveImage(msg.sessionId, png)
+            // Claude Code (headless/PTY) attaches an image by a bare filesystem
+            // path in the prompt — its Read tool auto-detects the path is an
+            // image. No quotes/@ (quotes can defeat the path detector; our
+            // pastes dir has no spaces). User then types their message + submits.
+            sessions.input(msg.sessionId, `${file} `)
+            return
+          }
           case 'resize':
             mustOwn(msg.sessionId)
             return sessions.resize(msg.sessionId, msg.cols, msg.rows)
