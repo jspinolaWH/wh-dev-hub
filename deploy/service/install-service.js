@@ -32,9 +32,15 @@ const svc = new Service({
 
 // Run as a real user account so PATH / claude / %USERPROFILE% match the
 // working interactive setup. Without these it installs as LocalSystem.
+//
+// account MUST be the bare username and domain the machine/AD domain — passing
+// "DOMAIN\user" as account makes node-windows emit <domain>D</domain><user>D\user</user>,
+// an invalid double-domain that fails CreateService (and node-windows then
+// wrongly reports success). For a local account, domain is the computer name.
 if (process.env.WH_SVC_ACCOUNT) {
   svc.logOnAs.account = process.env.WH_SVC_ACCOUNT
   svc.logOnAs.password = process.env.WH_SVC_PASSWORD || ''
+  if (process.env.WH_SVC_DOMAIN) svc.logOnAs.domain = process.env.WH_SVC_DOMAIN
 }
 
 svc.on('install', () => {

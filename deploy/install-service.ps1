@@ -38,6 +38,7 @@ Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
     ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {} }
 
 # 3. Credentials to run the service as this user (not LocalSystem).
+#    Pass the bare username and domain SEPARATELY (see install-service.js).
 $account = "$env:USERDOMAIN\$env:USERNAME"
 Write-Host ""
 Write-Host "The service will run as: $account" -ForegroundColor Yellow
@@ -45,9 +46,31 @@ $sec = Read-Host "Enter the Windows password for $account" -AsSecureString
 $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 
-# 4. Install via node-windows.
+# Grant this account the "Log on as a service" right (SeServiceLogonRight),
+# which node-windows does not do - without it the service cannot start.
+function Grant-LogonAsService([string]$acct) {
+    $sid = (New-Object System.Security.Principal.NTAccount($acct)
+        ).Translate([System.Security.Principal.SecurityIdentifier]).Value
+    $tmp = [IO.Path]::GetTempFileName()
+    secedit /export /cfg $tmp /areas USER_RIGHTS | Out-Null
+    $content = Get-Content $tmp
+    $line = $content | Where-Object { $_ -match '^SeServiceLogonRight' }
+    if ($line -and $line -match [regex]::Escape($sid)) { Remove-Item $tmp -Force; return }
+    if ($line) {
+        $content = $content -replace [regex]::Escape($line), "$line,*$sid"
+    } else {
+        $content += "SeServiceLogonRight = *$sid"
+    }
+    Set-Content $tmp $content
+    secedit /configure /db "$env:windir\security\database\local.sdb" /cfg $tmp /areas USER_RIGHTS | Out-Null
+    Remove-Item $tmp -Force
+}
+Grant-LogonAsService $account
+
+# 4. Install via node-windows (bare username + domain passed separately).
 $env:WH_HUB_DATA = $DataDir
-$env:WH_SVC_ACCOUNT = $account
+$env:WH_SVC_ACCOUNT = $env:USERNAME
+$env:WH_SVC_DOMAIN = $env:USERDOMAIN
 $env:WH_SVC_PASSWORD = $plain
 try {
     node (Join-Path $repoRoot 'deploy\service\install-service.js')
@@ -55,6 +78,18 @@ try {
     Remove-Item Env:WH_SVC_PASSWORD -ErrorAction SilentlyContinue
     $plain = $null
 }
+
+# node-windows writes the password in plaintext into the winsw XML on disk.
+# The SCM keeps its own copy of the credential, so scrub the file.
+Get-ChildItem -Path (Join-Path $repoRoot 'daemon\dist') -Recurse -Filter '*.xml' -ErrorAction SilentlyContinue |
+    ForEach-Object {
+        $xml = Get-Content $_.FullName -Raw
+        if ($xml -match '<password>') {
+            ($xml -replace '<password>.*?</password>', '<password>REMOVED</password>') |
+                Set-Content $_.FullName
+            Write-Host "scrubbed password from $($_.Name)" -ForegroundColor Yellow
+        }
+    }
 
 Start-Sleep -Seconds 4
 $svc = Get-Service -Name 'WasteHero Dev Hub' -ErrorAction SilentlyContinue
