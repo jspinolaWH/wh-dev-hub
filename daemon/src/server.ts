@@ -35,10 +35,23 @@ export function startServer(opts: {
     return { CLAUDE_CONFIG_DIR: profileDir }
   }
   const wss = new WebSocketServer({ host, port })
+  wss.on('error', (err) => console.error('[wh-dev-hub] wss error:', err))
   const clients = new Map<WebSocket, ClientState>()
 
+  // A write to a socket the peer already closed can throw synchronously
+  // (EOF/EPIPE) — that must never take the daemon down. Guard every send.
   const send = (ws: WebSocket, msg: ServerMsg) => {
-    if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(msg))
+    if (ws.readyState !== WebSocket.OPEN) return
+    try {
+      ws.send(JSON.stringify(msg))
+    } catch (err) {
+      console.error('[wh-dev-hub] send failed (dropping client):', err instanceof Error ? err.message : err)
+      try {
+        ws.terminate()
+      } catch {
+        /* already gone */
+      }
+    }
   }
   const broadcastSessions = () => {
     const msg: ServerMsg = { t: 'sessions', sessions: sessions.list() }
@@ -76,6 +89,10 @@ export function startServer(opts: {
   wss.on('connection', (ws) => {
     const state: ClientState = { user: null, attached: new Set(), pendingLoginState: null }
     clients.set(ws, state)
+
+    // Without an 'error' listener, a socket error (reset/EOF) is emitted as
+    // an unhandled 'error' event and crashes the process.
+    ws.on('error', (err) => console.error('[wh-dev-hub] client socket error:', err instanceof Error ? err.message : err))
 
     ws.on('message', async (raw) => {
       let msg: ClientMsg
