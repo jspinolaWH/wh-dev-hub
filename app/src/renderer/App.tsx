@@ -331,6 +331,7 @@ function CreateDialog(props: {
   // '' = interactive shell (run claude/claude --resume/git yourself).
   const LAUNCH: Record<string, string> = {
     claude: 'claude',
+    yolo: 'claude --dangerously-skip-permissions',
     resume: 'claude --resume',
     shell: '',
     custom: '',
@@ -381,6 +382,7 @@ function CreateDialog(props: {
               Start with
               <select value={launch} onChange={(e) => setLaunch(e.target.value as keyof typeof LAUNCH)}>
                 <option value="claude">Claude (fresh)</option>
+                <option value="yolo">Claude — skip permissions (build loops)</option>
                 <option value="resume">Claude — resume last session</option>
                 <option value="shell">Shell (type your own commands)</option>
                 <option value="custom">Custom command…</option>
