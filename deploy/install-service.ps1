@@ -37,17 +37,28 @@ Get-CimInstance Win32_Process -Filter "Name = 'node.exe'" |
     Where-Object { $_.CommandLine -like '*daemon\dist\index.cjs*' } |
     ForEach-Object { try { Stop-Process -Id $_.ProcessId -Force -ErrorAction Stop } catch {} }
 
-# 3. Credentials to run the service as this user (not LocalSystem).
-#    Pass the bare username and domain SEPARATELY (see install-service.js).
+# 3. Install the service as LocalSystem via node-windows (no credentials
+#    here, so nothing to echo or write to disk).
+$env:WH_HUB_DATA = $DataDir
+node (Join-Path $repoRoot 'deploy\service\install-service.js')
+Start-Sleep -Seconds 4
+
+$svc = Get-Service -DisplayName 'WasteHero Dev Hub' -ErrorAction SilentlyContinue
+if (-not $svc) { throw "Service not registered - check the node-windows output above." }
+$svcName = $svc.Name
+
+# 4. Reconfigure it to run as THIS user (so claude / PATH / %USERPROFILE%
+#    match the working interactive setup). sc.exe sets the credential straight
+#    into the SCM: the password is never echoed and never written to disk.
 $account = "$env:USERDOMAIN\$env:USERNAME"
 Write-Host ""
 Write-Host "The service will run as: $account" -ForegroundColor Yellow
-$sec = Read-Host "Enter the Windows password for $account" -AsSecureString
+$sec = Read-Host "Enter the Windows password for $account (not echoed anywhere)" -AsSecureString
 $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
     [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 
-# Grant this account the "Log on as a service" right (SeServiceLogonRight),
-# which node-windows does not do - without it the service cannot start.
+# Grant "Log on as a service" (SeServiceLogonRight); the SCM won't start the
+# service as a user account without it, and node-windows does not grant it.
 function Grant-LogonAsService([string]$acct) {
     $sid = (New-Object System.Security.Principal.NTAccount($acct)
         ).Translate([System.Security.Principal.SecurityIdentifier]).Value
@@ -56,49 +67,22 @@ function Grant-LogonAsService([string]$acct) {
     $content = Get-Content $tmp
     $line = $content | Where-Object { $_ -match '^SeServiceLogonRight' }
     if ($line -and $line -match [regex]::Escape($sid)) { Remove-Item $tmp -Force; return }
-    if ($line) {
-        $content = $content -replace [regex]::Escape($line), "$line,*$sid"
-    } else {
-        $content += "SeServiceLogonRight = *$sid"
-    }
+    if ($line) { $content = $content -replace [regex]::Escape($line), "$line,*$sid" }
+    else { $content += "SeServiceLogonRight = *$sid" }
     Set-Content $tmp $content
     secedit /configure /db "$env:windir\security\database\local.sdb" /cfg $tmp /areas USER_RIGHTS | Out-Null
     Remove-Item $tmp -Force
 }
 Grant-LogonAsService $account
 
-# 4. Install via node-windows (bare username + domain passed separately).
-$env:WH_HUB_DATA = $DataDir
-$env:WH_SVC_ACCOUNT = $env:USERNAME
-$env:WH_SVC_DOMAIN = $env:USERDOMAIN
-$env:WH_SVC_PASSWORD = $plain
-try {
-    node (Join-Path $repoRoot 'deploy\service\install-service.js')
-} finally {
-    Remove-Item Env:WH_SVC_PASSWORD -ErrorAction SilentlyContinue
-    $plain = $null
-}
+& sc.exe config $svcName obj= "$account" password= "$plain" | Out-Null
+$plain = $null
+Restart-Service -Name $svcName -Force
+Start-Sleep -Seconds 3
 
-# node-windows writes the password in plaintext into the winsw XML on disk.
-# The SCM keeps its own copy of the credential, so scrub the file.
-Get-ChildItem -Path (Join-Path $repoRoot 'daemon\dist') -Recurse -Filter '*.xml' -ErrorAction SilentlyContinue |
-    ForEach-Object {
-        $xml = Get-Content $_.FullName -Raw
-        if ($xml -match '<password>') {
-            ($xml -replace '<password>.*?</password>', '<password>REMOVED</password>') |
-                Set-Content $_.FullName
-            Write-Host "scrubbed password from $($_.Name)" -ForegroundColor Yellow
-        }
-    }
-
-Start-Sleep -Seconds 4
-$svc = Get-Service -Name 'WasteHero Dev Hub' -ErrorAction SilentlyContinue
-if ($svc) {
-    Write-Host ""
-    Write-Host "Service '$($svc.Name)' status: $($svc.Status)" -ForegroundColor Green
-    Write-Host "It now runs regardless of login, cannot be Ctrl-C'd, and auto-restarts."
-    Write-Host "Logs: $DataDir (daemonwrapper.log / daemon.err.log / daemon.out.log)"
-    Write-Host "Verify it listens: netstat -ano | findstr `":7811`""
-} else {
-    Write-Warning "Service not found after install - check the node-windows output above."
-}
+$svc = Get-Service -Name $svcName
+Write-Host ""
+Write-Host "Service '$svcName' status: $($svc.Status), running as $account" -ForegroundColor Green
+Write-Host "It runs regardless of login, cannot be Ctrl-C'd, and auto-restarts."
+Write-Host "Verify it listens: netstat -ano | findstr `":7811`""
+Write-Host "Restart later: Restart-Service $svcName (elevated)"

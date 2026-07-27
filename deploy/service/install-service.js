@@ -1,13 +1,15 @@
 // Installs the WasteHero Dev Hub daemon as a Windows service (node-windows /
 // winsw). A service runs with no interactive console, so it cannot be
 // Ctrl-C'd by whoever is using the shared PC, survives logoff/reboot, and
-// auto-restarts on crash — the fix for the daemon dying over the weekend.
+// auto-restarts on crash: the fix for the daemon dying over the weekend.
 //
-// Runs as the account whose credentials are passed in (must be the user that
-// owns the Claude CLI install + login profile), NOT LocalSystem — otherwise
-// child `claude` processes cannot find the CLI or the user's config.
+// This installs the service as LocalSystem. install-service.ps1 then switches
+// it to run as the actual user account via sc.exe, because child `claude`
+// processes must find the CLI and the user's login profile (both per-user).
+// We do the credential step in sc.exe, not here, so the password is never
+// echoed or written to disk.
 //
-// Invoked by install-service.ps1, which supplies env vars.
+// Invoked by install-service.ps1, which sets WH_HUB_DATA.
 const path = require('node:path')
 const { Service } = require('node-windows')
 
@@ -30,18 +32,12 @@ const svc = new Service({
   maxRestarts: 40,
 })
 
-// Run as a real user account so PATH / claude / %USERPROFILE% match the
-// working interactive setup. Without these it installs as LocalSystem.
-//
-// account MUST be the bare username and domain the machine/AD domain — passing
-// "DOMAIN\user" as account makes node-windows emit <domain>D</domain><user>D\user</user>,
-// an invalid double-domain that fails CreateService (and node-windows then
-// wrongly reports success). For a local account, domain is the computer name.
-if (process.env.WH_SVC_ACCOUNT) {
-  svc.logOnAs.account = process.env.WH_SVC_ACCOUNT
-  svc.logOnAs.password = process.env.WH_SVC_PASSWORD || ''
-  if (process.env.WH_SVC_DOMAIN) svc.logOnAs.domain = process.env.WH_SVC_DOMAIN
-}
+// NOTE: we deliberately do NOT set svc.logOnAs here. node-windows' logon path
+// is buggy (double-domains "DOMAIN\user", writes the password in plaintext
+// into the winsw XML, and echoes it to the console) and does not grant the
+// service-logon right. Instead install-service.ps1 installs the service as
+// LocalSystem via this script, then sets the run-as account + password with
+// sc.exe (which never prints the password and stores it only in the SCM).
 
 svc.on('install', () => {
   console.log('service installed; starting...')
