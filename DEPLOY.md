@@ -22,6 +22,25 @@ powershell -ExecutionPolicy Bypass -File deploy\install-daemon.ps1
 The installer builds the daemon, registers an auto-starting logon task with a
 crash-restart loop, and starts it. Data lives in `%USERPROFILE%\.wh-dev-hub`.
 
+### Recommended on a shared PC: run as a Windows service
+
+The logon-task install above works, but its hidden console can be Ctrl-C'd by
+anyone using the machine (this happened — the daemon was down a whole weekend).
+For an always-on host, install it as a real service instead:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File deploy\install-service.ps1
+```
+
+Run elevated. It builds the daemon, removes the logon task, and installs a
+service that runs as **your user account** (so the Claude CLI, its login
+profile, and PATH match), with **no console to Ctrl-C**, that **survives
+logoff/reboot** and **auto-restarts on crash**. You are prompted once for your
+Windows password (required to run a service as a user rather than LocalSystem).
+Uninstall: `node deploy\service\uninstall-service.js` (elevated).
+
+### Config
+
 Then edit `%USERPROFILE%\.wh-dev-hub\config.json`:
 
 | key | value |
