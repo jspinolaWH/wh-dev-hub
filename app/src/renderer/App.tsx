@@ -57,7 +57,13 @@ export function App() {
         if (msg.t === 'notification') {
           const alreadyLooking = document.hasFocus() && selectedId === msg.sessionId
           if (!alreadyLooking) {
-            const n = new Notification('WasteHero Dev Hub', { body: msg.message })
+            // Daemon sends "<session name>: <status>" — split so the session
+            // is the title and the status is the body (app name is the OS
+            // attribution set via setAppUserModelId).
+            const sep = msg.message.indexOf(': ')
+            const title = sep > 0 ? msg.message.slice(0, sep) : 'WasteHero Dev Hub'
+            const body = sep > 0 ? msg.message.slice(sep + 2) : msg.message
+            const n = new Notification(title, { body })
             n.onclick = () => {
               window.focus()
               setSelectedId(msg.sessionId)

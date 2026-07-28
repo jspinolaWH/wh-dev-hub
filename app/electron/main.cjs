@@ -3,6 +3,11 @@ const path = require('node:path')
 const fs = require('node:fs')
 const { execFile, execFileSync } = require('node:child_process')
 
+// Windows shows this as the notification/taskbar app identity. Without it,
+// toasts read "electron.app.WasteHero Dev Hub". A clean product name here
+// removes the prefix; the installed build's matching shortcut adds the icon.
+app.setAppUserModelId('WasteHero Dev Hub')
+
 // Native file picker: returns the selected files' name + base64 bytes so the
 // renderer can ship them to the host session. Reading happens here (main) since
 // the sandboxed renderer has no filesystem access.
