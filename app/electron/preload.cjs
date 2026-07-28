@@ -11,4 +11,6 @@ contextBridge.exposeInMainWorld('wh', {
     if (!img || img.isEmpty()) return ''
     return img.toPNG().toString('base64')
   },
+  // Opens a native file picker; resolves to [{name, base64}] for each file.
+  pickFiles: () => ipcRenderer.invoke('pick-files'),
 })

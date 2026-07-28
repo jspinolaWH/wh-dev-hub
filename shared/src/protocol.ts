@@ -49,6 +49,7 @@ export type ClientMsg =
   | { t: 'detach'; sessionId: string }
   | { t: 'input'; sessionId: string; data: string }
   | { t: 'paste-image'; sessionId: string; pngBase64: string }
+  | { t: 'attach-file'; sessionId: string; name: string; base64: string }
   | { t: 'resize'; sessionId: string; cols: number; rows: number }
   | { t: 'kill'; sessionId: string }
   | { t: 'remove'; sessionId: string }

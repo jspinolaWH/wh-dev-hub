@@ -105,6 +105,15 @@ export function App() {
 
   const selected = sessions.find((s) => s.id === selectedId)
 
+  const attachFiles = async () => {
+    if (!selected || !window.wh?.pickFiles) return
+    const files = await window.wh.pickFiles()
+    if (!files.length) return
+    for (const f of files) client.send({ t: 'attach-file', sessionId: selected.id, name: f.name, base64: f.base64 })
+    const names = files.map((f) => f.name).join(', ')
+    setToast(`Attached ${names} — the file path(s) are on the prompt; type your message and press Enter.`)
+  }
+
   return (
     <div className="app">
       <aside className="sidebar">
@@ -159,6 +168,14 @@ export function App() {
       </aside>
 
       <main className="main">
+        {selected && selected.status === 'running' && (
+          <div className="main-toolbar">
+            <span className="toolbar-name">{selected.name}</span>
+            <button className="btn tiny" onClick={attachFiles}>
+              📎 Attach file
+            </button>
+          </div>
+        )}
         {selected && selected.status === 'lost' ? (
           <div className="placeholder">
             <div>

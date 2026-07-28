@@ -7,6 +7,7 @@ declare global {
       readClipboard: () => string
       writeClipboard: (text: string) => void
       readClipboardImage: () => string
+      pickFiles: () => Promise<Array<{ name: string; base64: string }>>
     }
   }
 }

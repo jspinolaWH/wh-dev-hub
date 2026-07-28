@@ -296,15 +296,18 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
-   * Save a pasted image (PNG bytes) to a file on the host and return its
-   * absolute path, so it can be handed to the `claude` running in the session.
+   * Save an uploaded file (pasted image or attached document) to the host and
+   * return its absolute path, so it can be handed to the `claude` in the
+   * session. The stored name is sanitised (no spaces/separators) so the bare
+   * path can be injected on the prompt line for Claude's path detection.
    */
-  saveImage(id: string, png: Buffer): string {
+  saveFile(id: string, name: string, buf: Buffer): string {
     this.mustGet(id)
     const dir = path.join(DATA_DIR, 'pastes')
     fs.mkdirSync(dir, { recursive: true })
-    const file = path.join(dir, `paste-${id}-${crypto.randomBytes(4).toString('hex')}.png`)
-    fs.writeFileSync(file, png)
+    const safe = (name || 'file').replace(/[^\w.\-]+/g, '_').slice(-80)
+    const file = path.join(dir, `${id}-${crypto.randomBytes(3).toString('hex')}-${safe}`)
+    fs.writeFileSync(file, buf)
     return file
   }
 
