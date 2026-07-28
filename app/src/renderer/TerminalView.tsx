@@ -41,19 +41,55 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
 
     const offInput = term.onData((data) => client.send({ t: 'input', sessionId, data }))
 
-    // Paste via the Electron main-process clipboard (no browser permission,
-    // always works — xterm's own paste and the DOM paste event are unreliable
-    // in this Electron/ConPTY setup). Image first (best-effort; the Attach
-    // button is the guaranteed image route), then text.
-    const doPaste = () => {
+    const sendImageBlob = (blob: Blob) => {
+      blob.arrayBuffer().then((buf) => {
+        const bytes = new Uint8Array(buf)
+        let bin = ''
+        const CHUNK = 0x8000
+        for (let i = 0; i < bytes.length; i += CHUNK) bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
+        client.send({ t: 'paste-image', sessionId, pngBase64: btoa(bin) })
+      })
+    }
+
+    // Primary paste path: Electron main-process clipboard (no browser
+    // permission; always works for text). Returns true if it handled the
+    // paste. Image via main clipboard is best-effort — some sources (Snipping
+    // Tool) aren't captured by readImage(), so when this returns false the
+    // native paste event below picks up the image from clipboardData.
+    const doPaste = (): boolean => {
       const png = window.wh?.readClipboardImage?.() ?? ''
       if (png) {
         client.send({ t: 'paste-image', sessionId, pngBase64: png })
-        return
+        return true
       }
       const text = window.wh?.readClipboard?.() ?? ''
-      if (text) client.send({ t: 'input', sessionId, data: text })
+      if (text) {
+        client.send({ t: 'input', sessionId, data: text })
+        return true
+      }
+      return false
     }
+
+    // Fallback for clipboard images the main-process read misses: Chromium
+    // normalizes a pasted screenshot to an image/* item in the paste event.
+    const onPaste = (e: ClipboardEvent) => {
+      const dt = e.clipboardData
+      if (!dt) return
+      let img: File | null = null
+      for (let i = 0; i < (dt.items?.length ?? 0); i++) {
+        const it = dt.items[i]
+        if (it.type.startsWith('image/')) img = it.getAsFile()
+      }
+      for (let i = 0; !img && i < (dt.files?.length ?? 0); i++) {
+        if (dt.files[i].type.startsWith('image/')) img = dt.files[i]
+      }
+      if (img) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+        sendImageBlob(img)
+      }
+    }
+    el.addEventListener('paste', onPaste, true)
 
     // Clipboard keys, matching Windows Terminal / VS Code conventions:
     // - Ctrl+V / Ctrl+Shift+V     -> paste (text, or image if present)
@@ -63,8 +99,9 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
       if (ev.ctrlKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
-        doPaste()
-        return false
+        // If the main clipboard had text/image, we're done; otherwise let the
+        // native paste event fire so onPaste can grab an image it missed.
+        return doPaste() ? false : true
       }
       const isCopyKey =
         ev.ctrlKey && !ev.altKey && (ev.key === 'c' || ev.key === 'C') && (ev.shiftKey || term.hasSelection())
@@ -116,6 +153,7 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     term.focus()
 
     return () => {
+      el.removeEventListener('paste', onPaste, true)
       el.removeEventListener('contextmenu', onContextMenu)
       clearTimeout(resizeTimer)
       resizeObserver.disconnect()
