@@ -2,6 +2,31 @@
   box-sizing: border-box;
 }
 
+/* Modern thin scrollbars everywhere (Chromium/Electron), replacing the
+   chunky default Windows scrollbar. */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: #2a3c58;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #3a5178;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-corner,
+*::-webkit-scrollbar-button {
+  display: none;
+  background: transparent;
+}
+
 :root {
   --bg: #0b1220;
   --panel: #101a2c;
@@ -321,6 +346,12 @@ details > .btn {
   padding: 8px;
   background: var(--bg);
   overflow: hidden;
+}
+
+/* Reserve the scrollbar gutter so terminal text never renders under the
+   scrollbar (fixes the input line showing in front of it). */
+.terminal-container .xterm-viewport {
+  scrollbar-gutter: stable;
 }
 
 .placeholder {
