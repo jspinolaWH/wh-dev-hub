@@ -4,6 +4,7 @@ import { SessionManager } from './sessions'
 import { startServer } from './server'
 import { PortAllocator } from './presets'
 import { SlackAuth } from './slackAuth'
+import { startOtelReceiver } from './otel'
 
 // Last-resort safety net: a stray error anywhere (e.g. a socket write to a
 // dead peer) must never crash a daemon serving the whole team. Log and keep
@@ -17,7 +18,9 @@ process.on('unhandledRejection', (reason) => {
 
 const config = loadConfig()
 const allocator = new PortAllocator()
-const sessions = new SessionManager(config.scrollbackChars, allocator)
+const otelPort = config.otelPort ?? 7813
+const sessions = new SessionManager(config.scrollbackChars, allocator, otelPort)
+startOtelReceiver(otelPort, sessions)
 const auth = new StaticTokenAuth(config.tokens)
 const slackAuth = config.slack?.clientId ? new SlackAuth(config) : undefined
 if (!slackAuth) console.log('[wh-dev-hub] slack sign-in not configured (config.slack missing)')

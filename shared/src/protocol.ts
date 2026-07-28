@@ -20,6 +20,9 @@ export interface SessionInfo {
   links: SessionLink[]
   /** Increments on each (re)launch so the client remounts the terminal. */
   generation: number
+  /** Accumulated Claude usage for this session (from OpenTelemetry). */
+  costUsd: number
+  tokens: number
 }
 
 export interface PresetInfo {

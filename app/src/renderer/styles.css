@@ -104,6 +104,28 @@ body {
   font-size: 12px;
 }
 
+.usage-total {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.usage-total .usage-sep {
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.session-meta.usage {
+  color: var(--accent);
+}
+
 .dot {
   width: 8px;
   height: 8px;

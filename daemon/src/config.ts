@@ -18,6 +18,8 @@ export interface SlackConfig {
 export interface HubConfig {
   host: string
   port: number
+  /** Localhost port for the OTLP usage receiver (Claude cost/token metrics). */
+  otelPort?: number
   slack?: SlackConfig
   /** token -> username. Filled with a generated dev token on first run. */
   tokens: Record<string, string>

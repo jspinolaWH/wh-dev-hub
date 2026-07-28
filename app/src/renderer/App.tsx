@@ -6,6 +6,10 @@ import whMark from './assets/wh-mark.svg'
 
 const openLink = (url: string) => (window.wh ? window.wh.openExternal(url) : window.open(url))
 
+const fmtCost = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`)
+const fmtTokens = (n: number) =>
+  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${n}`
+
 const SETTINGS_KEY = 'wh-hub-settings'
 
 interface Settings {
@@ -145,6 +149,11 @@ export function App() {
           <>
             <div className="conn-status">
               <span className="dot ok" /> {client.user} @ {settings.url.replace('ws://', '')}
+            </div>
+            <div className="usage-total" title="Total Claude usage across all sessions">
+              <span>{fmtCost(sessions.reduce((a, s) => a + (s.costUsd || 0), 0))}</span>
+              <span className="usage-sep">·</span>
+              <span>{fmtTokens(sessions.reduce((a, s) => a + (s.tokens || 0), 0))} tokens</span>
             </div>
             <button className="btn primary" onClick={() => setShowCreate(true)}>
               + New session
@@ -310,6 +319,11 @@ function SessionCard(props: {
         {s.owner} · {s.status}
         {s.status === 'running' && s.attachedClients > 0 && ` · ${s.attachedClients} attached`}
       </div>
+      {(s.costUsd > 0 || s.tokens > 0) && (
+        <div className="session-meta usage">
+          {fmtCost(s.costUsd)} · {fmtTokens(s.tokens)} tokens
+        </div>
+      )}
       <div className="session-meta path">{s.cwd}</div>
       {s.links.length > 0 && (
         <div className="session-links">

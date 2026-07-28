@@ -20,6 +20,8 @@ interface SessionMeta {
   env: Record<string, string>
   /** Bumped on each (re)launch so clients know to remount the terminal. */
   generation: number
+  /** Accumulated Claude usage (summed OpenTelemetry delta exports). */
+  usage: { costUsd: number; tokens: number }
 }
 
 export interface SpawnSpec {
@@ -64,6 +66,7 @@ export class SessionManager extends EventEmitter {
   constructor(
     private scrollbackChars: number,
     private allocator: PortAllocator,
+    private otelPort: number,
   ) {
     super()
     this.restoreMeta()
@@ -75,6 +78,7 @@ export class SessionManager extends EventEmitter {
     try {
       const metas: SessionMeta[] = JSON.parse(fs.readFileSync(SESSIONS_PATH, 'utf8'))
       for (const meta of metas) {
+        if (!meta.usage) meta.usage = { costUsd: 0, tokens: 0 } // older sessions.json
         this.sessions.set(meta.id, {
           meta,
           proc: null,
@@ -111,7 +115,18 @@ export class SessionManager extends EventEmitter {
       attachedClients: s.attachedClients,
       links: s.meta.links,
       generation: s.meta.generation,
+      costUsd: s.meta.usage.costUsd,
+      tokens: s.meta.usage.tokens,
     }
+  }
+
+  /** Add a (delta) usage sample for a session, from the OTLP receiver. */
+  addUsage(id: string, costUsd: number, tokens: number) {
+    const s = this.sessions.get(id)
+    if (!s) return
+    s.meta.usage.costUsd += costUsd
+    s.meta.usage.tokens += tokens
+    this.emit('changed')
   }
 
   create(spec: SpawnSpec): SessionInfo {
@@ -131,6 +146,7 @@ export class SessionManager extends EventEmitter {
         ports: spec.ports,
         env: spec.env,
         generation: 0,
+        usage: { costUsd: 0, tokens: 0 },
       },
       proc: null,
       status: 'exited',
@@ -200,6 +216,16 @@ export class SessionManager extends EventEmitter {
     // Force the classic renderer and plain key encoding for hub sessions.
     baseEnv.CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN = '1'
     baseEnv.CLAUDE_CODE_DISABLE_MOUSE = '1'
+
+    // OpenTelemetry: Claude Code exports cost/token metrics as OTLP JSON to
+    // our local receiver, tagged with this session's id so we can attribute
+    // usage. (Metrics only; logs exporter left off to keep it light.)
+    baseEnv.CLAUDE_CODE_ENABLE_TELEMETRY = '1'
+    baseEnv.OTEL_METRICS_EXPORTER = 'otlp'
+    baseEnv.OTEL_EXPORTER_OTLP_PROTOCOL = 'http/json'
+    baseEnv.OTEL_EXPORTER_OTLP_ENDPOINT = `http://127.0.0.1:${this.otelPort}`
+    baseEnv.OTEL_METRIC_EXPORT_INTERVAL = '10000'
+    baseEnv.OTEL_RESOURCE_ATTRIBUTES = `wh.session=${session.meta.id}`
 
     const proc = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
