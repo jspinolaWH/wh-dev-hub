@@ -66,6 +66,21 @@ firewall rule for it.
 After starting anything, give them the URL to open:
 `http://${WH_TAILNET_HOST}:<port>` (e.g. `http://jack.tailc248d9.ts.net:3000`).
 
+## 4b. Restarting the daemon after an update (no UAC)
+
+If you pull new daemon code and rebuild it (`npm run build -w daemon`), restart
+the service to load it — WITHOUT an elevation prompt — with:
+
+```
+schtasks /Run /TN "WH Restart Daemon"
+```
+
+This is a pre-elevated on-demand task (set up once by install-service.ps1 /
+enable-remote-restart.ps1). Do NOT use `Restart-Service` directly — that
+triggers a UAC dialog on this PC's secure desktop, which can't be approved
+remotely. Restarting drops running sessions to "lost" (relaunchable), so only
+do it when no one is mid-loop.
+
 ## 5. Housekeeping
 
 - Keep all work **inside `RemoteServer`** — other people use this PC; don't

@@ -80,9 +80,15 @@ $plain = $null
 Restart-Service -Name $svcName -Force
 Start-Sleep -Seconds 3
 
+# Register the pre-elevated restart task so future updates can restart the
+# daemon with no UAC prompt (see enable-remote-restart.ps1).
+$restartAction = "powershell -NoProfile -WindowStyle Hidden -Command Restart-Service $svcName -Force"
+cmd /c "schtasks /Create /F /TN `"WH Restart Daemon`" /TR `"$restartAction`" /SC ONCE /ST 00:00 /RL HIGHEST /RU `"$env:USERNAME`"" | Out-Null
+
 $svc = Get-Service -Name $svcName
 Write-Host ""
 Write-Host "Service '$svcName' status: $($svc.Status), running as $account" -ForegroundColor Green
 Write-Host "It runs regardless of login, cannot be Ctrl-C'd, and auto-restarts."
 Write-Host "Verify it listens: netstat -ano | findstr `":7811`""
+Write-Host "Restart with no UAC (from any session): schtasks /Run /TN `"WH Restart Daemon`""
 Write-Host "Restart later: Restart-Service $svcName (elevated)"
