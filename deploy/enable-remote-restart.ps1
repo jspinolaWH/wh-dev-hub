@@ -1,5 +1,5 @@
 # One-time (ELEVATED) setup so the daemon can be restarted WITHOUT a UAC
-# prompt — needed to apply daemon updates remotely (the Restart-Service UAC
+# prompt - needed to apply daemon updates remotely (the Restart-Service UAC
 # dialog only appears on this PC's secure desktop, unclickable from home).
 #
 # It registers a pre-elevated on-demand scheduled task. Afterwards, restart the
