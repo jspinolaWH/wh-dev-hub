@@ -3,9 +3,6 @@ import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import type { HubClient } from './hubClient'
 
-const readClipboard = async (): Promise<string> =>
-  window.wh?.readClipboard ? window.wh.readClipboard() : navigator.clipboard.readText()
-
 const writeClipboard = (text: string) =>
   window.wh?.writeClipboard ? window.wh.writeClipboard(text) : navigator.clipboard.writeText(text)
 
@@ -44,62 +41,31 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
 
     const offInput = term.onData((data) => client.send({ t: 'input', sessionId, data }))
 
-    const sendImageBlob = (blob: Blob) => {
-      blob.arrayBuffer().then((buf) => {
-        const bytes = new Uint8Array(buf)
-        let bin = ''
-        const CHUNK = 0x8000
-        for (let i = 0; i < bytes.length; i += CHUNK) {
-          bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK))
-        }
-        client.send({ t: 'paste-image', sessionId, pngBase64: btoa(bin) })
-      })
-    }
-
-    // Native paste event (capture phase, before xterm) — the reliable way to
-    // get a pasted screenshot: the browser exposes it as an image/* item
-    // regardless of how it reached the clipboard (Snipping Tool, etc.). For
-    // images we consume the event and ferry the bytes; text falls through to
-    // xterm's own paste handling untouched.
-    const onPaste = (e: ClipboardEvent) => {
-      const items = e.clipboardData?.items
-      if (!items) return
-      for (let i = 0; i < items.length; i++) {
-        const it = items[i]
-        if (it.kind === 'file' && it.type.startsWith('image/')) {
-          const blob = it.getAsFile()
-          if (blob) {
-            e.preventDefault()
-            e.stopImmediatePropagation()
-            sendImageBlob(blob)
-            return
-          }
-        }
-      }
-    }
-    el.addEventListener('paste', onPaste, true)
-
-    // Fallback paste for right-click / when no native event is available:
-    // main-process clipboard (image first, then text).
-    const paste = () => {
+    // Paste via the Electron main-process clipboard (no browser permission,
+    // always works — xterm's own paste and the DOM paste event are unreliable
+    // in this Electron/ConPTY setup). Image first (best-effort; the Attach
+    // button is the guaranteed image route), then text.
+    const doPaste = () => {
       const png = window.wh?.readClipboardImage?.() ?? ''
       if (png) {
         client.send({ t: 'paste-image', sessionId, pngBase64: png })
         return
       }
-      readClipboard().then((text) => {
-        if (text) client.send({ t: 'input', sessionId, data: text })
-      })
+      const text = window.wh?.readClipboard?.() ?? ''
+      if (text) client.send({ t: 'input', sessionId, data: text })
     }
 
     // Clipboard keys, matching Windows Terminal / VS Code conventions:
-    // - Ctrl+V                    -> let the native paste event fire (handled
-    //                                above for images; xterm pastes text)
+    // - Ctrl+V / Ctrl+Shift+V     -> paste (text, or image if present)
     // - Ctrl+Shift+C              -> copy selection (always)
     // - Ctrl+C WITH a selection   -> copy it (and clear), like on Windows
     // - Ctrl+C with NO selection  -> falls through as SIGINT (interrupt)
     term.attachCustomKeyEventHandler((ev) => {
       if (ev.type !== 'keydown') return true
+      if (ev.ctrlKey && !ev.altKey && (ev.key === 'v' || ev.key === 'V')) {
+        doPaste()
+        return false
+      }
       const isCopyKey =
         ev.ctrlKey && !ev.altKey && (ev.key === 'c' || ev.key === 'C') && (ev.shiftKey || term.hasSelection())
       if (isCopyKey) {
@@ -124,7 +90,7 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
         writeClipboard(sel)
         term.clearSelection()
       } else {
-        paste()
+        doPaste()
       }
     }
     el.addEventListener('contextmenu', onContextMenu)
@@ -150,7 +116,6 @@ export function TerminalView({ client, sessionId }: { client: HubClient; session
     term.focus()
 
     return () => {
-      el.removeEventListener('paste', onPaste, true)
       el.removeEventListener('contextmenu', onContextMenu)
       clearTimeout(resizeTimer)
       resizeObserver.disconnect()
