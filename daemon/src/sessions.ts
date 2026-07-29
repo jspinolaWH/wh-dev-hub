@@ -54,6 +54,11 @@ interface Session {
 
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json')
 
+// How much recent output to replay when a client attaches. Full scrollback is
+// kept server-side (scrollbackChars) but replaying all of it on every chat
+// switch is slow; ~256KB is the last several screens and renders instantly.
+const ATTACH_REPLAY_CHARS = 256_000
+
 export interface SessionEvents {
   output: (sessionId: string, data: string) => void
   exit: (sessionId: string, exitCode: number) => void
@@ -305,7 +310,23 @@ export class SessionManager extends EventEmitter {
     s.attachedClients += 1
     if (s.proc) s.proc.resize(cols, rows)
     this.emit('changed')
-    return s.scrollback.join('')
+    // Replay only the recent tail, not the whole (up to 2MB) buffer: on a
+    // long-running session, shipping+parsing all of it made switching chats
+    // hang for ~10s. The tail is plenty of recent context and the TUI redraws
+    // on the next output anyway.
+    return this.tailScrollback(s, ATTACH_REPLAY_CHARS)
+  }
+
+  private tailScrollback(s: Session, maxChars: number): string {
+    if (s.scrollbackLen <= maxChars) return s.scrollback.join('')
+    const parts: string[] = []
+    let total = 0
+    for (let i = s.scrollback.length - 1; i >= 0; i--) {
+      parts.unshift(s.scrollback[i])
+      total += s.scrollback[i].length
+      if (total >= maxChars) break
+    }
+    return parts.join('').slice(-maxChars)
   }
 
   detach(id: string) {
