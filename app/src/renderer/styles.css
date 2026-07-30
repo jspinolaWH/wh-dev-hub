@@ -60,6 +60,14 @@ body {
   overflow: hidden;
 }
 
+/* Phone: the list or the open session fills the screen (App renders one). */
+@media (max-width: 760px) {
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+  }
+}
+
 .sidebar {
   width: 300px;
   min-width: 300px;

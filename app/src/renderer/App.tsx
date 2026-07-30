@@ -6,11 +6,30 @@ import whMark from './assets/wh-mark.svg'
 
 const openLink = (url: string) => (window.wh ? window.wh.openExternal(url) : window.open(url))
 
+function useMediaQuery(q: string) {
+  const [matches, setMatches] = useState(() => window.matchMedia(q).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(q)
+    const handler = () => setMatches(mq.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [q])
+  return matches
+}
+
 const fmtCost = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`)
 const fmtTokens = (n: number) =>
   n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${n}`
 
 const SETTINGS_KEY = 'wh-hub-settings'
+
+// In the Electron app there's no server host; default to localhost. In the
+// web build (served BY the daemon and opened on a phone/browser), connect back
+// to the same host/port that served the page.
+const IS_WEB = !window.wh
+const DEFAULT_URL = IS_WEB
+  ? `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`
+  : 'ws://127.0.0.1:7811'
 
 interface Settings {
   url: string
@@ -19,9 +38,9 @@ interface Settings {
 
 function loadSettings(): Settings {
   try {
-    return { url: 'ws://127.0.0.1:7811', token: '', ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') }
+    return { url: DEFAULT_URL, token: '', ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') }
   } catch {
-    return { url: 'ws://127.0.0.1:7811', token: '' }
+    return { url: DEFAULT_URL, token: '' }
   }
 }
 
@@ -60,17 +79,22 @@ export function App() {
         }
         if (msg.t === 'notification') {
           const alreadyLooking = document.hasFocus() && selectedId === msg.sessionId
-          if (!alreadyLooking) {
-            // Daemon sends "<session name>: <status>" — split so the session
-            // is the title and the status is the body (app name is the OS
-            // attribution set via setAppUserModelId).
-            const sep = msg.message.indexOf(': ')
-            const title = sep > 0 ? msg.message.slice(0, sep) : 'WasteHero Dev Hub'
-            const body = sep > 0 ? msg.message.slice(sep + 2) : msg.message
-            const n = new Notification(title, { body })
-            n.onclick = () => {
-              window.focus()
-              setSelectedId(msg.sessionId)
+          // Notification API is absent/gated on mobile Safari — guard so a
+          // notification event never throws and breaks session updates.
+          if (!alreadyLooking && 'Notification' in window && Notification.permission === 'granted') {
+            try {
+              // Daemon sends "<session name>: <status>" — split so the session
+              // is the title and the status is the body.
+              const sep = msg.message.indexOf(': ')
+              const title = sep > 0 ? msg.message.slice(0, sep) : 'WasteHero Dev Hub'
+              const body = sep > 0 ? msg.message.slice(sep + 2) : msg.message
+              const n = new Notification(title, { body })
+              n.onclick = () => {
+                window.focus()
+                setSelectedId(msg.sessionId)
+              }
+            } catch {
+              /* notifications unavailable on this platform */
             }
           }
         }
@@ -115,6 +139,12 @@ export function App() {
 
   const selected = sessions.find((s) => s.id === selectedId)
 
+  // On a phone, show either the session list OR the open session (with a back
+  // button), not both side by side.
+  const narrow = useMediaQuery('(max-width: 760px)')
+  const showSidebar = !narrow || !selected
+  const showMain = !narrow || !!selected
+
   const attachFiles = async () => {
     if (!selected || !window.wh?.pickFiles) return
     const files = await window.wh.pickFiles()
@@ -126,6 +156,7 @@ export function App() {
 
   return (
     <div className="app">
+      {showSidebar && (
       <aside className="sidebar">
         <div className="brand">
           <img className="brand-mark" src={whMark} alt="WasteHero" />
@@ -181,14 +212,23 @@ export function App() {
           </>
         )}
       </aside>
+      )}
 
+      {showMain && (
       <main className="main">
-        {selected && selected.status === 'running' && (
+        {selected && (
           <div className="main-toolbar">
+            {narrow && (
+              <button className="btn tiny" onClick={() => setSelectedId(undefined)}>
+                ‹ Sessions
+              </button>
+            )}
             <span className="toolbar-name">{selected.name}</span>
-            <button className="btn tiny" onClick={attachFiles}>
-              📎 Attach file
-            </button>
+            {selected.status === 'running' && !IS_WEB && (
+              <button className="btn tiny" onClick={attachFiles}>
+                📎 Attach file
+              </button>
+            )}
           </div>
         )}
         {selected && selected.status === 'lost' ? (
@@ -217,6 +257,7 @@ export function App() {
           </div>
         )}
       </main>
+      )}
 
       {toast && (
         <div className="toast" onClick={() => setToast(undefined)}>

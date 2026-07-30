@@ -1,3 +1,4 @@
+import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
 import { WebSocketServer, WebSocket } from 'ws'
@@ -7,6 +8,7 @@ import type { SessionManager } from './sessions'
 import { DATA_DIR } from './config'
 import { resolvePreset, type Preset, type PortAllocator } from './presets'
 import type { SlackAuth } from './slackAuth'
+import { createWebHandler, defaultDistDir } from './web'
 
 interface ClientState {
   user: string | null
@@ -44,8 +46,14 @@ export function startServer(opts: {
     fs.mkdirSync(profileDir, { recursive: true })
     return { ...base, CLAUDE_CONFIG_DIR: profileDir }
   }
-  const wss = new WebSocketServer({ host, port })
+  // One HTTP server on `port` serves BOTH the web client (so phones/browsers
+  // can open the UI over Tailscale) and the WebSocket (via upgrade). No extra
+  // port, no extra firewall rule.
+  const webHandler = createWebHandler(defaultDistDir())
+  const httpServer = http.createServer(webHandler)
+  const wss = new WebSocketServer({ server: httpServer })
   wss.on('error', (err) => console.error('[wh-dev-hub] wss error:', err))
+  httpServer.listen(port, host)
   const clients = new Map<WebSocket, ClientState>()
 
   // A write to a socket the peer already closed can throw synchronously
