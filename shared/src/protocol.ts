@@ -23,6 +23,8 @@ export interface SessionInfo {
   /** Accumulated Claude usage for this session (from OpenTelemetry). */
   costUsd: number
   tokens: number
+  /** Auto-continue: nudge the session to keep going when it goes idle. */
+  autoContinue: { enabled: boolean; prompt: string; maxNudges: number; sent: number }
 }
 
 export interface PresetInfo {
@@ -53,6 +55,7 @@ export type ClientMsg =
   | { t: 'input'; sessionId: string; data: string }
   | { t: 'paste-image'; sessionId: string; pngBase64: string }
   | { t: 'attach-file'; sessionId: string; name: string; base64: string }
+  | { t: 'set-auto-continue'; sessionId: string; enabled: boolean; prompt?: string; maxNudges?: number }
   | { t: 'resize'; sessionId: string; cols: number; rows: number }
   | { t: 'kill'; sessionId: string }
   | { t: 'remove'; sessionId: string }

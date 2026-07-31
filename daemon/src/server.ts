@@ -235,6 +235,15 @@ export function startServer(opts: {
             sessions.input(msg.sessionId, `${file} `)
             return
           }
+          case 'set-auto-continue': {
+            mustOwn(msg.sessionId)
+            sessions.setAutoContinue(msg.sessionId, {
+              enabled: msg.enabled,
+              prompt: msg.prompt,
+              maxNudges: msg.maxNudges,
+            })
+            return
+          }
           case 'resize':
             mustOwn(msg.sessionId)
             return sessions.resize(msg.sessionId, msg.cols, msg.rows)

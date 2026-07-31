@@ -369,6 +369,32 @@ details > .btn {
   white-space: nowrap;
 }
 
+.autocont {
+  position: relative;
+}
+
+.autocont-pop {
+  position: absolute;
+  top: 28px;
+  right: 0;
+  z-index: 20;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.autocont-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
 .terminal-container {
   flex: 1;
   min-width: 0;

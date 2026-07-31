@@ -22,7 +22,15 @@ interface SessionMeta {
   generation: number
   /** Accumulated Claude usage (summed OpenTelemetry delta exports). */
   usage: { costUsd: number; tokens: number }
+  /**
+   * Auto-continue: when the session finishes a burst of work and goes idle,
+   * send `prompt` to keep it going — up to `maxNudges` times (a hard runaway
+   * guard). `sent` resets to 0 on any manual input. Opt-in (enabled=false).
+   */
+  autoContinue: { enabled: boolean; prompt: string; maxNudges: number; sent: number }
 }
+
+const DEFAULT_AUTO_CONTINUE = { enabled: false, prompt: 'continue', maxNudges: 25, sent: 0 }
 
 export interface SpawnSpec {
   name: string
@@ -84,6 +92,7 @@ export class SessionManager extends EventEmitter {
       const metas: SessionMeta[] = JSON.parse(fs.readFileSync(SESSIONS_PATH, 'utf8'))
       for (const meta of metas) {
         if (!meta.usage) meta.usage = { costUsd: 0, tokens: 0 } // older sessions.json
+        if (!meta.autoContinue) meta.autoContinue = { ...DEFAULT_AUTO_CONTINUE }
         this.sessions.set(meta.id, {
           meta,
           proc: null,
@@ -122,7 +131,19 @@ export class SessionManager extends EventEmitter {
       generation: s.meta.generation,
       costUsd: s.meta.usage.costUsd,
       tokens: s.meta.usage.tokens,
+      autoContinue: { ...s.meta.autoContinue },
     }
+  }
+
+  setAutoContinue(id: string, opts: { enabled: boolean; prompt?: string; maxNudges?: number }) {
+    const s = this.mustGet(id)
+    const ac = s.meta.autoContinue
+    ac.enabled = opts.enabled
+    if (opts.prompt !== undefined) ac.prompt = opts.prompt
+    if (opts.maxNudges !== undefined) ac.maxNudges = Math.max(1, Math.min(1000, opts.maxNudges))
+    ac.sent = 0 // fresh budget whenever toggled
+    this.persistMeta()
+    this.emit('changed')
   }
 
   /** Add a (delta) usage sample for a session, from the OTLP receiver. */
@@ -152,6 +173,7 @@ export class SessionManager extends EventEmitter {
         env: spec.env,
         generation: 0,
         usage: { costUsd: 0, tokens: 0 },
+        autoContinue: { ...DEFAULT_AUTO_CONTINUE },
       },
       proc: null,
       status: 'exited',
@@ -286,7 +308,20 @@ export class SessionManager extends EventEmitter {
 
     clearTimeout(a.idleTimer)
     a.idleTimer = setTimeout(() => {
-      if (s.status === 'running' && a.lastOutputAt - a.activeSince > 8000) {
+      if (s.status !== 'running' || a.lastOutputAt - a.activeSince <= 8000) return
+      const ac = s.meta.autoContinue
+      if (ac.enabled && ac.sent < ac.maxNudges && s.proc) {
+        // Keep the loop going instead of waiting for the human.
+        ac.sent += 1
+        s.proc.write(ac.prompt + '\r')
+        this.emit('changed')
+        this.emit(
+          'notification',
+          s.meta.id,
+          'auto-continue',
+          `${s.meta.name}: auto-continued (${ac.sent}/${ac.maxNudges})`,
+        )
+      } else {
         this.emit('notification', s.meta.id, 'idle', `${s.meta.name}: finished working — waiting for you`)
       }
     }, 20_000)
@@ -339,6 +374,9 @@ export class SessionManager extends EventEmitter {
   input(id: string, data: string) {
     const s = this.mustGet(id)
     if (!s.proc) throw new Error('session is not running')
+    // Manual input means the human is steering — reset the auto-continue
+    // budget so it can help again after this fresh interaction.
+    s.meta.autoContinue.sent = 0
     s.proc.write(data)
   }
 

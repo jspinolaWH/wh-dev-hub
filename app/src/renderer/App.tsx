@@ -224,6 +224,14 @@ export function App() {
               </button>
             )}
             <span className="toolbar-name">{selected.name}</span>
+            {selected.status === 'running' && (
+              <AutoContinueControl
+                session={selected}
+                onSet={(enabled, prompt) =>
+                  client.send({ t: 'set-auto-continue', sessionId: selected.id, enabled, prompt })
+                }
+              />
+            )}
             {selected.status === 'running' && !IS_WEB && (
               <button className="btn tiny" onClick={attachFiles}>
                 📎 Attach file
@@ -337,6 +345,46 @@ function ConnectForm(props: {
         </button>
       </details>
       {error && <div className="error">{error}</div>}
+    </div>
+  )
+}
+
+function AutoContinueControl(props: { session: SessionInfo; onSet: (enabled: boolean, prompt: string) => void }) {
+  const ac = props.session.autoContinue
+  const [open, setOpen] = useState(false)
+  const [prompt, setPrompt] = useState(ac.prompt)
+
+  return (
+    <div className="autocont">
+      <button
+        className={`btn tiny ${ac.enabled ? 'primary' : ''}`}
+        title="When the session finishes and goes idle, keep it going by sending your nudge automatically (capped)."
+        onClick={() => (ac.enabled ? props.onSet(false, ac.prompt) : setOpen((o) => !o))}
+      >
+        {ac.enabled ? `♺ Auto-continue ${ac.sent}/${ac.maxNudges}` : '♺ Auto-continue'}
+      </button>
+      {open && !ac.enabled && (
+        <div className="autocont-pop" onClick={(e) => e.stopPropagation()}>
+          <label>
+            Nudge to send when idle
+            <input value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder="continue" />
+          </label>
+          <div className="autocont-actions">
+            <button className="btn tiny" onClick={() => setOpen(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn tiny primary"
+              onClick={() => {
+                props.onSet(true, prompt.trim() || 'continue')
+                setOpen(false)
+              }}
+            >
+              Start
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
