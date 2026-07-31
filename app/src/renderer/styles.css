@@ -420,6 +420,180 @@ details > .btn {
   text-align: center;
 }
 
+/* Overview / mission control */
+.overview {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px;
+}
+
+.ov-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.ov-chip {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+.ov-chip.attention {
+  color: #ffd7da;
+  border-color: var(--danger);
+  background: #3a1116;
+}
+.ov-chip.idle {
+  color: #ffe6b0;
+  border-color: #6b5320;
+}
+.ov-chip.working {
+  color: var(--accent);
+  border-color: #2a4d66;
+}
+
+.ov-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.ov-row {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--panel-2);
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ov-row:hover {
+  border-color: var(--accent);
+}
+.ov-row.attention {
+  border-left-color: var(--danger);
+}
+.ov-row.idle {
+  border-left-color: #d8a53a;
+}
+.ov-row.working {
+  border-left-color: var(--accent);
+}
+.ov-row.offline {
+  opacity: 0.6;
+}
+
+.ov-row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.ov-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--border);
+  color: var(--text);
+}
+.ov-badge.attention {
+  background: var(--danger);
+  color: #2a0d10;
+}
+.ov-badge.idle {
+  background: #d8a53a;
+  color: #2a1c05;
+}
+.ov-badge.working {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+
+.ov-name {
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-time {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ov-doing {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  min-width: 0;
+}
+.ov-pct {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 90px;
+  height: 14px;
+  background: var(--bg);
+  border-radius: 7px;
+  overflow: hidden;
+  flex: none;
+}
+.ov-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--accent);
+  opacity: 0.5;
+}
+.ov-pct-num {
+  position: relative;
+  font-size: 10px;
+  font-weight: 700;
+  width: 100%;
+  text-align: center;
+  color: var(--text);
+}
+.ov-eta {
+  color: var(--accent);
+  flex: none;
+}
+.ov-note {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ov-note.dim {
+  color: var(--muted);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+.ov-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ov-ac {
+  color: var(--accent);
+}
+.ov-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+
 .modal-backdrop {
   position: fixed;
   inset: 0;

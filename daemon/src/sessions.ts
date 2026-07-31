@@ -58,6 +58,27 @@ interface Session {
     lastBellAt: number
     idleTimer?: ReturnType<typeof setTimeout>
   }
+  /** Last non-empty, de-ANSI'd output line — the overview's "what's it doing". */
+  lastLine: string
+  /** Agent-reported progress, scraped from a [[WH-PROGRESS ...]] line. */
+  progress?: { pct?: number; eta?: string; note?: string }
+}
+
+// eslint-disable-next-line no-control-regex
+const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g
+const stripAnsi = (s: string) => s.replace(ANSI_RE, '')
+const PROGRESS_RE = /\[\[WH-PROGRESS\s+([^\]]+)\]\]/g
+
+/** Parse the body of a WH-PROGRESS line: `pct=60 eta=4m note="fixing X"`. */
+function parseProgress(body: string): { pct?: number; eta?: string; note?: string } {
+  const out: { pct?: number; eta?: string; note?: string } = {}
+  const pct = body.match(/\bpct=(\d{1,3})/)
+  if (pct) out.pct = Math.max(0, Math.min(100, Number(pct[1])))
+  const eta = body.match(/\beta=("([^"]*)"|(\S+))/)
+  if (eta) out.eta = (eta[2] ?? eta[3] ?? '').slice(0, 24)
+  const note = body.match(/\bnote=("([^"]*)"|(\S+))/)
+  if (note) out.note = (note[2] ?? note[3] ?? '').slice(0, 160)
+  return out
 }
 
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json')
@@ -101,6 +122,7 @@ export class SessionManager extends EventEmitter {
           scrollbackLen: 0,
           attachedClients: 0,
           activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
+          lastLine: '',
         })
       }
     } catch (err) {
@@ -132,7 +154,19 @@ export class SessionManager extends EventEmitter {
       costUsd: s.meta.usage.costUsd,
       tokens: s.meta.usage.tokens,
       autoContinue: { ...s.meta.autoContinue },
+      activityStatus: this.activityStatus(s),
+      lastActivityAt: s.activity.lastOutputAt ? new Date(s.activity.lastOutputAt).toISOString() : s.meta.createdAt,
+      lastLine: s.lastLine,
+      progress: s.progress,
     }
+  }
+
+  private activityStatus(s: Session): 'working' | 'idle' | 'attention' | 'offline' {
+    if (s.status !== 'running') return 'offline'
+    const now = Date.now()
+    if (now - s.activity.lastBellAt < 30_000) return 'attention'
+    if (now - s.activity.lastOutputAt < 10_000) return 'working'
+    return 'idle'
   }
 
   setAutoContinue(id: string, opts: { enabled: boolean; prompt?: string; maxNudges?: number }) {
@@ -181,6 +215,7 @@ export class SessionManager extends EventEmitter {
       scrollbackLen: 0,
       attachedClients: 0,
       activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
+          lastLine: '',
     }
     this.sessions.set(id, session)
     this.spawn(session, spec.cols, spec.rows)
@@ -300,6 +335,23 @@ export class SessionManager extends EventEmitter {
     const now = Date.now()
     if (now - a.lastOutputAt > 5000) a.activeSince = now
     a.lastOutputAt = now
+
+    // Track the last meaningful line for the overview's "what's it doing".
+    const clean = stripAnsi(data)
+    const lines = clean.split(/\r?\n/).map((l) => l.trim())
+    for (let i = lines.length - 1; i >= 0; i--) {
+      if (lines[i]) {
+        s.lastLine = lines[i].slice(0, 160)
+        break
+      }
+    }
+
+    // Scrape agent-reported progress: [[WH-PROGRESS pct=60 eta=4m note="..."]]
+    let m: RegExpExecArray | null
+    PROGRESS_RE.lastIndex = 0
+    let lastMatch: string | null = null
+    while ((m = PROGRESS_RE.exec(clean))) lastMatch = m[1]
+    if (lastMatch) s.progress = parseProgress(lastMatch)
 
     if (data.includes('\x07') && now - a.lastBellAt > 10_000) {
       a.lastBellAt = now

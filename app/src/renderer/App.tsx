@@ -54,6 +54,8 @@ export function App() {
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [presets, setPresets] = useState<PresetInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>()
+  const [showOverview, setShowOverview] = useState(false)
+  const [, setTick] = useState(0)
   const [showCreate, setShowCreate] = useState(false)
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string>()
@@ -108,6 +110,13 @@ export function App() {
     return () => clearTimeout(t)
   }, [toast])
 
+  // Keep the overview's relative timers fresh even when sessions are quiet.
+  useEffect(() => {
+    if (!showOverview) return
+    const id = setInterval(() => setTick((t) => t + 1), 5000)
+    return () => clearInterval(id)
+  }, [showOverview])
+
   const connect = (viaSlack = false) => {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings))
     setConnError(undefined)
@@ -139,11 +148,15 @@ export function App() {
 
   const selected = sessions.find((s) => s.id === selectedId)
 
-  // On a phone, show either the session list OR the open session (with a back
-  // button), not both side by side.
+  // On a phone, show one pane at a time (list / overview / open session).
   const narrow = useMediaQuery('(max-width: 760px)')
-  const showSidebar = !narrow || !selected
-  const showMain = !narrow || !!selected
+  const showSidebar = !narrow || (!selected && !showOverview)
+  const showMain = !narrow || showOverview || !!selected
+
+  const openSession = (id: string) => {
+    setShowOverview(false)
+    setSelectedId(id)
+  }
 
   const attachFiles = async () => {
     if (!selected || !window.wh?.pickFiles) return
@@ -189,6 +202,12 @@ export function App() {
             <button className="btn primary" onClick={() => setShowCreate(true)}>
               + New session
             </button>
+            <button
+              className={`btn ${showOverview ? 'primary' : ''}`}
+              onClick={() => setShowOverview((o) => !o)}
+            >
+              ▦ Overview
+            </button>
             <div className="session-list">
               {sessions.map((s) => (
                 <SessionCard
@@ -214,7 +233,24 @@ export function App() {
       </aside>
       )}
 
-      {showMain && (
+      {showMain && showOverview ? (
+        <main className="main">
+          <div className="main-toolbar">
+            {narrow && (
+              <button className="btn tiny" onClick={() => setShowOverview(false)}>
+                ‹ Sessions
+              </button>
+            )}
+            <span className="toolbar-name">Overview — {sessions.length} sessions</span>
+          </div>
+          <OverviewPanel
+            sessions={sessions}
+            onOpen={openSession}
+            onKill={(id) => client.send({ t: 'kill', sessionId: id })}
+            onRelaunch={(id) => client.send({ t: 'relaunch', sessionId: id, cols: 120, rows: 30 })}
+          />
+        </main>
+      ) : showMain ? (
       <main className="main">
         {selected && (
           <div className="main-toolbar">
@@ -265,7 +301,7 @@ export function App() {
           </div>
         )}
       </main>
-      )}
+      ) : null}
 
       {toast && (
         <div className="toast" onClick={() => setToast(undefined)}>
@@ -345,6 +381,98 @@ function ConnectForm(props: {
         </button>
       </details>
       {error && <div className="error">{error}</div>}
+    </div>
+  )
+}
+
+const timeAgo = (iso: string) => {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 60) return `${s}s`
+  if (s < 3600) return `${Math.floor(s / 60)}m`
+  return `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`
+}
+
+const STATUS_META: Record<string, { label: string; cls: string; rank: number }> = {
+  attention: { label: 'Needs you', cls: 'attention', rank: 0 },
+  idle: { label: 'Waiting', cls: 'idle', rank: 1 },
+  working: { label: 'Working', cls: 'working', rank: 2 },
+  offline: { label: 'Stopped', cls: 'offline', rank: 3 },
+}
+
+function OverviewPanel(props: {
+  sessions: SessionInfo[]
+  onOpen: (id: string) => void
+  onKill: (id: string) => void
+  onRelaunch: (id: string) => void
+}) {
+  const eff = (s: SessionInfo) => (s.status === 'running' ? s.activityStatus : s.status === 'lost' ? 'offline' : 'offline')
+  const sorted = [...props.sessions].sort(
+    (a, b) =>
+      (STATUS_META[eff(a)].rank - STATUS_META[eff(b)].rank) ||
+      new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime(),
+  )
+  const count = (st: string) => props.sessions.filter((s) => eff(s) === st).length
+
+  return (
+    <div className="overview">
+      <div className="ov-summary">
+        <span className="ov-chip attention">{count('attention')} need you</span>
+        <span className="ov-chip idle">{count('idle')} waiting</span>
+        <span className="ov-chip working">{count('working')} working</span>
+        <span className="ov-chip offline">{count('offline')} stopped</span>
+      </div>
+      <div className="ov-list">
+        {sorted.map((s) => {
+          const st = eff(s)
+          const meta = STATUS_META[st]
+          return (
+            <div key={s.id} className={`ov-row ${meta.cls}`} onClick={() => props.onOpen(s.id)}>
+              <div className="ov-row-main">
+                <span className={`ov-badge ${meta.cls}`}>{meta.label}</span>
+                <span className="ov-name">{s.name}</span>
+                <span className="ov-time">{s.status === 'running' ? timeAgo(s.lastActivityAt) : s.status}</span>
+              </div>
+              <div className="ov-doing">
+                {s.progress ? (
+                  <>
+                    {typeof s.progress.pct === 'number' && (
+                      <span className="ov-pct">
+                        <span className="ov-bar" style={{ width: `${s.progress.pct}%` }} />
+                        <span className="ov-pct-num">{s.progress.pct}%</span>
+                      </span>
+                    )}
+                    {s.progress.eta && <span className="ov-eta">~{s.progress.eta} (agent est.)</span>}
+                    <span className="ov-note">{s.progress.note || s.lastLine}</span>
+                  </>
+                ) : (
+                  <span className="ov-note dim">{s.lastLine || '—'}</span>
+                )}
+              </div>
+              <div className="ov-meta">
+                <span>{fmtCost(s.costUsd)}</span>
+                <span className="usage-sep">·</span>
+                <span>{fmtTokens(s.tokens)} tok</span>
+                {s.autoContinue.enabled && <span className="ov-ac">♻ {s.autoContinue.sent}/{s.autoContinue.maxNudges}</span>}
+                <span className="ov-actions">
+                  <button className="btn tiny" onClick={(e) => (e.stopPropagation(), props.onOpen(s.id))}>
+                    open
+                  </button>
+                  {s.status === 'running' ? (
+                    <button className="btn tiny danger" onClick={(e) => (e.stopPropagation(), props.onKill(s.id))}>
+                      kill
+                    </button>
+                  ) : (
+                    <button className="btn tiny" onClick={(e) => (e.stopPropagation(), props.onRelaunch(s.id))}>
+                      relaunch
+                    </button>
+                  )}
+                </span>
+              </div>
+            </div>
+          )
+        })}
+        {props.sessions.length === 0 && <div className="empty">No sessions yet</div>}
+      </div>
     </div>
   )
 }

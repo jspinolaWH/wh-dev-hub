@@ -81,6 +81,24 @@ triggers a UAC dialog on this PC's secure desktop, which can't be approved
 remotely. Restarting drops running sessions to "lost" (relaunchable), so only
 do it when no one is mid-loop.
 
+## 4c. Report progress for the overview (WH-PROGRESS)
+
+You run as one of many parallel sessions the user watches from an Overview
+dashboard. Help them see your status at a glance: **periodically print a
+single progress line** (roughly whenever you finish a step or your estimate
+changes) in exactly this format:
+
+```
+[[WH-PROGRESS pct=<0-100> eta=<e.g. 5m|1h|unknown> note="<short what you're doing>"]]
+```
+
+Example: `[[WH-PROGRESS pct=60 eta=4m note="wiring the price-determination API into the FE picker"]]`
+
+Rules: keep `note` short (a few words), give an honest `pct` and `eta` (say
+`eta=unknown` if you truly can't estimate — don't invent precision), and print
+it on its own line so it's easy to parse. It costs nothing but a line of
+output and lets the user triage many sessions without opening each one.
+
 ## 5. Housekeeping
 
 - Keep all work **inside `RemoteServer`** — other people use this PC; don't

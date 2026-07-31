@@ -25,6 +25,14 @@ export interface SessionInfo {
   tokens: number
   /** Auto-continue: nudge the session to keep going when it goes idle. */
   autoContinue: { enabled: boolean; prompt: string; maxNudges: number; sent: number }
+  /** Overview: derived activity state (running sessions only; else 'offline'). */
+  activityStatus: 'working' | 'idle' | 'attention' | 'offline'
+  /** ISO timestamp of the last output (or created time if none yet). */
+  lastActivityAt: string
+  /** Last meaningful output line — a glanceable "what's it doing". */
+  lastLine: string
+  /** Agent-reported progress, scraped from a [[WH-PROGRESS ...]] line. */
+  progress?: { pct?: number; eta?: string; note?: string }
 }
 
 export interface PresetInfo {
