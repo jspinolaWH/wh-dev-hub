@@ -343,6 +343,23 @@ export class SessionManager extends EventEmitter {
   }
 
   /**
+   * Kill every live pty child. Called on daemon shutdown so the service stop
+   * doesn't have to reach into a live process tree (which crashed winsw and
+   * orphaned the daemon). Sessions come back as "lost" (relaunchable).
+   */
+  killAllProcs() {
+    for (const s of this.sessions.values()) {
+      if (s.proc) {
+        try {
+          s.proc.kill()
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+  }
+
+  /**
    * Save an uploaded file (pasted image or attached document) to the host and
    * return its absolute path, so it can be handed to the `claude` in the
    * session. The stored name is sanitised (no spaces/separators) so the bare

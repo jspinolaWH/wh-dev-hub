@@ -30,6 +30,14 @@ const svc = new Service({
   wait: 2,
   grow: 0.5,
   maxRestarts: 40,
+  // Stop ordering must be explicit: stop the PARENT (daemon) first so it runs
+  // its graceful shutdown (kills its own pty children, exits) — rather than
+  // winsw walking the live tree and Process.Kill()-racing a child, which
+  // crashed winsw and orphaned the daemon. A finite timeout lets the daemon
+  // exit cleanly before any force-kill. (Also avoids node-windows emitting a
+  // bogus `--stopparentfirst undefined` arg by setting the value explicitly.)
+  stopparentfirst: true,
+  stoptimeout: 15,
 })
 
 // NOTE: we deliberately do NOT set svc.logOnAs here. node-windows' logon path

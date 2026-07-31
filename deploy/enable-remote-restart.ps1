@@ -15,7 +15,10 @@ $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIden
 if (-not $isAdmin) { throw "Run this once from an elevated (Administrator) PowerShell." }
 
 $svc = (Get-Service -DisplayName 'WasteHero Dev Hub' -ErrorAction Stop).Name
-$action = "powershell -NoProfile -WindowStyle Hidden -Command Restart-Service $svc -Force"
+# Point at the robust restart script (self-heals the winsw orphan wedge)
+# rather than a plain Restart-Service.
+$restartScript = Join-Path $PSScriptRoot 'restart-daemon.ps1'
+$action = "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$restartScript`""
 
 # Run level HIGHEST + run as the current (admin) user: Task Scheduler stores
 # the elevation, so a later `schtasks /Run` triggers it elevated with no UAC.

@@ -53,6 +53,19 @@ export function startServer(opts: {
   const httpServer = http.createServer(webHandler)
   const wss = new WebSocketServer({ server: httpServer })
   wss.on('error', (err) => console.error('[wh-dev-hub] wss error:', err))
+  // If the port is still held (e.g. a stale/orphaned daemon), fail loudly and
+  // exit instead of running as a non-listening zombie — makes the problem
+  // visible in the log rather than silently "up but useless".
+  httpServer.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(
+        `[wh-dev-hub] FATAL: port ${port} already in use — another daemon is still holding it. ` +
+          `Free it (kill the node process running daemon\\dist\\index.cjs) then restart.`,
+      )
+      process.exit(1)
+    }
+    console.error('[wh-dev-hub] http server error:', err)
+  })
   httpServer.listen(port, host)
   const clients = new Map<WebSocket, ClientState>()
 

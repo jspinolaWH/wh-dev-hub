@@ -81,8 +81,11 @@ Restart-Service -Name $svcName -Force
 Start-Sleep -Seconds 3
 
 # Register the pre-elevated restart task so future updates can restart the
-# daemon with no UAC prompt (see enable-remote-restart.ps1).
-$restartAction = "powershell -NoProfile -WindowStyle Hidden -Command Restart-Service $svcName -Force"
+# daemon with no UAC prompt (see enable-remote-restart.ps1). Points at the
+# robust restart-daemon.ps1 (self-heals the winsw orphan wedge) rather than a
+# plain Restart-Service.
+$restartScript = Join-Path $repoRoot 'deploy\restart-daemon.ps1'
+$restartAction = "powershell -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$restartScript`""
 cmd /c "schtasks /Create /F /TN `"WH Restart Daemon`" /TR `"$restartAction`" /SC ONCE /ST 00:00 /RL HIGHEST /RU `"$env:USERNAME`"" | Out-Null
 
 $svc = Get-Service -Name $svcName
