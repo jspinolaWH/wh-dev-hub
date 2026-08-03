@@ -84,27 +84,36 @@ export function startServer(opts: {
       }
     }
   }
+  // Per-user isolation: each user only sees and receives events for their OWN
+  // sessions. (Owner is set at create time from the signed-in user.)
+  const listFor = (user: string) => sessions.list().filter((s) => s.owner === user)
+  const ownerOf = (sessionId: string) => sessions.get(sessionId)?.meta.owner
+
   const broadcastSessions = () => {
-    const msg: ServerMsg = { t: 'sessions', sessions: sessions.list() }
-    for (const [ws, state] of clients) if (state.user) send(ws, msg)
+    for (const [ws, state] of clients) {
+      if (state.user) send(ws, { t: 'sessions', sessions: listFor(state.user) })
+    }
   }
 
   sessions.on('changed', broadcastSessions)
   sessions.on('output', (sessionId: string, data: string) => {
+    const owner = ownerOf(sessionId)
     for (const [ws, state] of clients) {
-      if (state.user && state.attached.has(sessionId)) {
+      if (state.user === owner && state.attached.has(sessionId)) {
         send(ws, { t: 'output', sessionId, data })
       }
     }
   })
   sessions.on('exit', (sessionId: string, exitCode: number) => {
+    const owner = ownerOf(sessionId)
     for (const [ws, state] of clients) {
-      if (state.user) send(ws, { t: 'exit', sessionId, exitCode })
+      if (state.user && state.user === owner) send(ws, { t: 'exit', sessionId, exitCode })
     }
   })
   sessions.on('notification', (sessionId: string, kind: string, message: string) => {
+    const owner = ownerOf(sessionId)
     for (const [ws, state] of clients) {
-      if (state.user) send(ws, { t: 'notification', sessionId, kind, message })
+      if (state.user && state.user === owner) send(ws, { t: 'notification', sessionId, kind, message })
     }
   })
 
@@ -145,23 +154,24 @@ export function startServer(opts: {
           const result = await auth.verify(msg.token)
           if (!result) return send(ws, { t: 'error', message: 'authentication failed' })
           state.user = result.user
-          return send(ws, { t: 'hello-ok', user: result.user, sessions: sessions.list(), presets: presetInfos })
+          return send(ws, { t: 'hello-ok', user: result.user, sessions: listFor(result.user), presets: presetInfos })
         }
 
         if (!state.user) return send(ws, { t: 'error', message: 'not authenticated' })
         const user = state.user
 
-        // Anyone signed in may attach (read-only peek); only the owner may
-        // type into, resize, kill, or remove a session.
+        // Per-user isolation: a session belongs to its creator. Everything
+        // (view, attach, type, kill) requires ownership — you never see or
+        // touch another user's sessions.
         const mustOwn = (sessionId: string) => {
           const s = sessions.get(sessionId)
           if (!s) throw new Error(`no such session: ${sessionId}`)
-          if (s.meta.owner !== user) throw new Error(`read-only: this session belongs to ${s.meta.owner}`)
+          if (s.meta.owner !== user) throw new Error(`this session belongs to ${s.meta.owner}`)
         }
 
         switch (msg.t) {
           case 'list':
-            return send(ws, { t: 'sessions', sessions: sessions.list() })
+            return send(ws, { t: 'sessions', sessions: listFor(user) })
           case 'create': {
             const userEnv = envForUser(user)
             let info
@@ -202,6 +212,7 @@ export function startServer(opts: {
             return send(ws, { t: 'created', session: info })
           }
           case 'attach': {
+            mustOwn(msg.sessionId)
             const scrollback = sessions.attach(msg.sessionId, msg.cols, msg.rows)
             state.attached.add(msg.sessionId)
             return send(ws, { t: 'attached', sessionId: msg.sessionId, scrollback })

@@ -40,24 +40,23 @@ while (msg.t !== 'created') msg = await dev.next()
 const sid = msg.session.id
 console.log('dev created session', sid)
 
-// joao can attach (peek)
+// Per-user isolation: joao cannot even attach to dev's session (not just
+// read-only — fully hidden/blocked).
 joao.ws.send(JSON.stringify({ t: 'attach', sessionId: sid, cols: 80, rows: 24 }))
 msg = await joao.next()
 while (msg.t !== 'attached' && msg.t !== 'error') msg = await joao.next()
-if (msg.t !== 'attached') throw new Error('FAIL: joao could not peek: ' + JSON.stringify(msg))
-console.log('joao attached read-only: ok')
+if (msg.t !== 'error') throw new Error('FAIL: joao could attach to dev session')
+console.log('joao attach rejected: ok —', msg.message)
 
-// joao cannot type or kill
+// joao cannot type or kill dev's session either
 joao.ws.send(JSON.stringify({ t: 'input', sessionId: sid, data: 'echo hacked\r' }))
 msg = await joao.next()
 while (msg.t !== 'error') msg = await joao.next()
-if (!msg.message.includes('read-only')) throw new Error('FAIL: wrong error: ' + msg.message)
 console.log('joao input rejected: ok —', msg.message)
 
 joao.ws.send(JSON.stringify({ t: 'kill', sessionId: sid }))
 msg = await joao.next()
 while (msg.t !== 'error') msg = await joao.next()
-if (!msg.message.includes('read-only')) throw new Error('FAIL: joao could kill: ' + msg.message)
 console.log('joao kill rejected: ok')
 
 // joao's own session gets an isolated profile dir
