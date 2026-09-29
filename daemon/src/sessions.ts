@@ -3,8 +3,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import * as pty from '@lydell/node-pty'
-import type { SessionInfo, SessionLink } from '@wh/shared'
+import { Terminal } from '@xterm/headless'
+import { SerializeAddon } from '@xterm/addon-serialize'
+import { CHAT_COLORS, type ChatColor, type SessionInfo, type SessionLink } from '@wh/shared'
 import { DATA_DIR } from './config'
+import { cleanName } from './folders'
 import type { PortAllocator } from './presets'
 
 interface SessionMeta {
@@ -28,6 +31,9 @@ interface SessionMeta {
    * guard). `sent` resets to 0 on any manual input. Opt-in (enabled=false).
    */
   autoContinue: { enabled: boolean; prompt: string; maxNudges: number; sent: number }
+  /** Sidebar organisation (colour tag, folder id from the owner's FolderStore). */
+  color?: ChatColor
+  folderId?: string
 }
 
 const DEFAULT_AUTO_CONTINUE = { enabled: false, prompt: 'continue', maxNudges: 25, sent: 0 }
@@ -49,8 +55,7 @@ interface Session {
   proc: pty.IPty | null
   status: 'running' | 'exited' | 'lost'
   exitCode?: number
-  scrollback: string[]
-  scrollbackLen: number
+  term: TermMirror
   attachedClients: number
   activity: {
     lastOutputAt: number
@@ -60,14 +65,27 @@ interface Session {
   }
   /** Last non-empty, de-ANSI'd output line — the overview's "what's it doing". */
   lastLine: string
+  /** The latest de-ANSI'd chunk plus a short tail of the one before, so text
+   * split across chunks still matches. */
+  recentText: string
   /** Agent-reported progress, scraped from a [[WH-PROGRESS ...]] line. */
   progress?: { pct?: number; eta?: string; note?: string }
+  /** Last name adopted from Claude's `/rename`, so a redrawn confirmation
+   * (e.g. Claude repainting on resize) can't undo a later rename in the hub. */
+  claudeName?: string
 }
 
 // eslint-disable-next-line no-control-regex
 const ANSI_RE = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b[@-_]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g
 const stripAnsi = (s: string) => s.replace(ANSI_RE, '')
 const PROGRESS_RE = /\[\[WH-PROGRESS\s+([^\]]+)\]\]/g
+// Claude Code's `/rename` confirmation as rendered — "  ⎿  Session renamed to:
+// X", plus a note when the name was taken or a newer rename won. Only /rename
+// prints it; the terminal title can't be used because Claude also puts
+// auto-generated topics there.
+const RENAME_HINT = /Session (?:renamed to|is named): /
+const RENAME_RE =
+  /^\s*⎿\s+Session (?:renamed to|is named): (.+?)(?: \("[^"]*" is held by another live session on this machine\)| \(a newer rename[^)]*\))?$/
 
 /** Parse the body of a WH-PROGRESS line: `pct=60 eta=4m note="fixing X"`. */
 function parseProgress(body: string): { pct?: number; eta?: string; note?: string } {
@@ -83,10 +101,66 @@ function parseProgress(body: string): { pct?: number; eta?: string; note?: strin
 
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json')
 
-// How much recent output to replay when a client attaches. Full scrollback is
-// kept server-side (scrollbackChars) but replaying all of it on every chat
-// switch is slow; ~256KB is the last several screens and renders instantly.
-const ATTACH_REPLAY_CHARS = 256_000
+/**
+ * Server-side mirror of a session's terminal. All output is parsed here, so an
+ * attaching client gets the rendered screen + scrollback — complete, compact,
+ * never cut mid-escape-sequence — rather than a tail of the raw byte stream,
+ * which Claude's spinner redraws fill up within seconds.
+ */
+class TermMirror {
+  private term: Terminal
+  private serializer = new SerializeAddon()
+  private cursorHidden = false
+
+  constructor(cols: number, rows: number, scrollback: number) {
+    // Same parsing options as the client's xterm (TerminalView.tsx), so the
+    // mirror lays output out exactly like a client that never detached.
+    this.term = new Terminal({ cols, rows, scrollback, allowProposedApi: true, windowsPty: { backend: 'conpty' } })
+    this.term.loadAddon(this.serializer)
+    // The serializer doesn't carry cursor visibility (DECTCEM); track it so a
+    // replayed TUI that hides its cursor doesn't show a stray one.
+    for (const final of ['h', 'l']) {
+      this.term.parser.registerCsiHandler({ prefix: '?', final }, (params) => {
+        if (params.includes(25)) this.cursorHidden = final === 'l'
+        return false
+      })
+    }
+  }
+
+  /** `parsed` runs once the chunk has been applied to the mirror. */
+  write(data: string, parsed?: () => void) {
+    this.term.write(data, parsed)
+  }
+
+  resize(cols: number, rows: number) {
+    if (cols !== this.term.cols || rows !== this.term.rows) this.term.resize(cols, rows)
+  }
+
+  snapshot(): string {
+    return this.serializer.serialize() + (this.cursorHidden ? '\x1b[?25l' : '')
+  }
+
+  /** The name in the latest `/rename` confirmation near the bottom of the screen. */
+  renamedTo(): string | undefined {
+    const buf = this.term.buffer.active
+    const bottom = buf.baseY + this.term.rows - 1
+    let line = ''
+    for (let y = bottom; y >= Math.max(0, bottom - 200); y--) {
+      const row = buf.getLine(y)
+      if (!row) continue
+      line = row.translateToString(!line) + line
+      if (row.isWrapped) continue // soft-wrapped: keep joining the rows above
+      const m = RENAME_RE.exec(line)
+      if (m) return m[1].trim().slice(0, 120)
+      line = ''
+    }
+    return undefined
+  }
+
+  dispose() {
+    this.term.dispose()
+  }
+}
 
 export interface SessionEvents {
   output: (sessionId: string, data: string) => void
@@ -98,7 +172,7 @@ export class SessionManager extends EventEmitter {
   private sessions = new Map<string, Session>()
 
   constructor(
-    private scrollbackChars: number,
+    private scrollbackLines: number,
     private allocator: PortAllocator,
     private otelPort: number,
   ) {
@@ -118,11 +192,11 @@ export class SessionManager extends EventEmitter {
           meta,
           proc: null,
           status: 'lost',
-          scrollback: [],
-          scrollbackLen: 0,
+          term: new TermMirror(120, 30, this.scrollbackLines),
           attachedClients: 0,
           activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
           lastLine: '',
+          recentText: '',
         })
       }
     } catch (err) {
@@ -158,7 +232,34 @@ export class SessionManager extends EventEmitter {
       lastActivityAt: s.activity.lastOutputAt ? new Date(s.activity.lastOutputAt).toISOString() : s.meta.createdAt,
       lastLine: s.lastLine,
       progress: s.progress,
+      color: s.meta.color,
+      folderId: s.meta.folderId,
     }
+  }
+
+  /** Rename, recolour or move a chat (`null` clears colour / folder). */
+  update(id: string, patch: { name?: string; color?: ChatColor | null; folderId?: string | null }) {
+    const s = this.mustGet(id)
+    if (patch.color != null && !CHAT_COLORS.includes(patch.color)) throw new Error(`unknown colour: ${patch.color}`)
+    if (patch.name !== undefined) s.meta.name = cleanName(patch.name, 'Chat')
+    if (patch.color !== undefined) s.meta.color = patch.color ?? undefined
+    if (patch.folderId !== undefined) s.meta.folderId = patch.folderId ?? undefined
+    this.persistMeta()
+    this.emit('changed')
+  }
+
+  /** A deleted folder's chats move back out to the top level. */
+  unfile(owner: string, folderId: string) {
+    let moved = false
+    for (const s of this.sessions.values()) {
+      if (s.meta.owner === owner && s.meta.folderId === folderId) {
+        s.meta.folderId = undefined
+        moved = true
+      }
+    }
+    if (!moved) return
+    this.persistMeta()
+    this.emit('changed')
   }
 
   private activityStatus(s: Session): 'working' | 'idle' | 'attention' | 'offline' {
@@ -211,11 +312,11 @@ export class SessionManager extends EventEmitter {
       },
       proc: null,
       status: 'exited',
-      scrollback: [],
-      scrollbackLen: 0,
+      term: new TermMirror(spec.cols, spec.rows, this.scrollbackLines),
       attachedClients: 0,
       activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
-          lastLine: '',
+      lastLine: '',
+      recentText: '',
     }
     this.sessions.set(id, session)
     this.spawn(session, spec.cols, spec.rows)
@@ -240,7 +341,10 @@ export class SessionManager extends EventEmitter {
       }
     }
     const marker = `\r\n\x1b[38;2;117;189;234m--- relaunched ${new Date().toISOString()} ---\x1b[0m\r\n`
-    this.appendScrollback(session, marker)
+    // ConPTY opens every new process with a clear-screen, which would wipe the
+    // previous run's last screen and this marker: scroll both into history.
+    session.term.resize(cols, rows)
+    session.term.write(marker + '\r\n'.repeat(rows))
     this.spawn(session, cols, rows)
     return this.toInfo(session)
   }
@@ -302,13 +406,19 @@ export class SessionManager extends EventEmitter {
     session.exitCode = undefined
     session.meta.generation += 1
     session.activity = { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 }
+    session.term.resize(cols, rows)
     this.persistMeta()
 
     const id = session.meta.id
     proc.onData((data) => {
-      this.appendScrollback(session, data)
       this.trackActivity(session, data)
-      this.emit('output', id, data)
+      const renamed = RENAME_HINT.test(session.recentText)
+      // Forward only once the mirror has parsed it: a snapshot taken at attach
+      // time then lines up exactly with the live output that follows it.
+      session.term.write(data, () => {
+        this.emit('output', id, data)
+        if (renamed) this.syncName(session)
+      })
     })
     proc.onExit(({ exitCode }) => {
       session.status = 'exited'
@@ -338,6 +448,7 @@ export class SessionManager extends EventEmitter {
 
     // Track the last meaningful line for the overview's "what's it doing".
     const clean = stripAnsi(data)
+    s.recentText = s.recentText.slice(-120) + clean
     const lines = clean.split(/\r?\n/).map((l) => l.trim())
     for (let i = lines.length - 1; i >= 0; i--) {
       if (lines[i]) {
@@ -379,13 +490,15 @@ export class SessionManager extends EventEmitter {
     }, 20_000)
   }
 
-  private appendScrollback(s: Session, data: string) {
-    s.scrollback.push(data)
-    s.scrollbackLen += data.length
-    while (s.scrollbackLen > this.scrollbackChars && s.scrollback.length > 1) {
-      const dropped = s.scrollback.shift()!
-      s.scrollbackLen -= dropped.length
-    }
+  /** Follow Claude's `/rename`: the chat takes the name from its confirmation. */
+  private syncName(s: Session) {
+    const name = s.term.renamedTo()
+    if (!name || name === s.claudeName) return
+    s.claudeName = name
+    if (name === s.meta.name) return
+    s.meta.name = name
+    this.persistMeta()
+    this.emit('changed')
   }
 
   get(id: string): Session | undefined {
@@ -395,25 +508,11 @@ export class SessionManager extends EventEmitter {
   attach(id: string, cols: number, rows: number): string {
     const s = this.mustGet(id)
     s.attachedClients += 1
-    if (s.proc) s.proc.resize(cols, rows)
+    this.resize(id, cols, rows)
     this.emit('changed')
-    // Replay only the recent tail, not the whole (up to 2MB) buffer: on a
-    // long-running session, shipping+parsing all of it made switching chats
-    // hang for ~10s. The tail is plenty of recent context and the TUI redraws
-    // on the next output anyway.
-    return this.tailScrollback(s, ATTACH_REPLAY_CHARS)
-  }
-
-  private tailScrollback(s: Session, maxChars: number): string {
-    if (s.scrollbackLen <= maxChars) return s.scrollback.join('')
-    const parts: string[] = []
-    let total = 0
-    for (let i = s.scrollback.length - 1; i >= 0; i--) {
-      parts.unshift(s.scrollback[i])
-      total += s.scrollback[i].length
-      if (total >= maxChars) break
-    }
-    return parts.join('').slice(-maxChars)
+    // The rendered screen + full scrollback at the client's size: its size
+    // follows the lines of history, not how much the spinner has redrawn.
+    return s.term.snapshot()
   }
 
   detach(id: string) {
@@ -467,7 +566,14 @@ export class SessionManager extends EventEmitter {
 
   resize(id: string, cols: number, rows: number) {
     const s = this.sessions.get(id)
-    if (s?.proc) s.proc.resize(cols, rows)
+    if (!s) return
+    s.term.resize(cols, rows)
+    try {
+      s.proc?.resize(cols, rows)
+    } catch {
+      // The process exited but onExit hasn't fired yet (ConPTY reports exit
+      // late) — nothing left to resize, and attaching must still succeed.
+    }
   }
 
   kill(id: string) {
@@ -482,6 +588,7 @@ export class SessionManager extends EventEmitter {
   remove(id: string) {
     const s = this.mustGet(id)
     if (s.status === 'running') throw new Error('kill the session before removing it')
+    s.term.dispose()
     this.sessions.delete(id)
     this.persistMeta()
     this.emit('changed')

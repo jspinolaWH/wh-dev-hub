@@ -30,8 +30,8 @@ export interface HubConfig {
   inheritHostClaudeLogin: string[]
   /** One-click environment recipes offered in the New-session dialog. */
   presets: Preset[]
-  /** Max scrollback kept per session, in characters. */
-  scrollbackChars: number
+  /** Scrollback lines kept per session and restored when a client attaches. */
+  scrollbackLines: number
 }
 
 export const DATA_DIR = process.env.WH_HUB_DATA
@@ -46,7 +46,7 @@ const DEFAULTS: HubConfig = {
   tokens: {},
   inheritHostClaudeLogin: ['dev'],
   presets: [],
-  scrollbackChars: 2_000_000,
+  scrollbackLines: 10_000,
 }
 
 export function loadConfig(): HubConfig {
@@ -56,6 +56,8 @@ export function loadConfig(): HubConfig {
     onDisk = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'))
   }
   const config: HubConfig = { ...DEFAULTS, ...onDisk }
+  // Superseded by scrollbackLines; drop it so nobody tunes a dead setting.
+  delete (config as { scrollbackChars?: number }).scrollbackChars
   if (Object.keys(config.tokens).length === 0) {
     const token = crypto.randomBytes(16).toString('hex')
     config.tokens = { [token]: 'dev' }

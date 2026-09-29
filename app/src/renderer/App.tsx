@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { PresetInfo, SessionInfo } from '@wh/shared'
+import type { FolderInfo, PresetInfo, SessionInfo } from '@wh/shared'
 import { HubClient, type ConnState } from './hubClient'
 import { TerminalView } from './TerminalView'
+import { ChatList, chatStyle } from './ChatList'
+import { fmtCost, fmtTokens, openLink } from './util'
 import whMark from './assets/wh-mark.svg'
-
-const openLink = (url: string) => (window.wh ? window.wh.openExternal(url) : window.open(url))
 
 function useMediaQuery(q: string) {
   const [matches, setMatches] = useState(() => window.matchMedia(q).matches)
@@ -16,10 +16,6 @@ function useMediaQuery(q: string) {
   }, [q])
   return matches
 }
-
-const fmtCost = (n: number) => (n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`)
-const fmtTokens = (n: number) =>
-  n >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : `${n}`
 
 const SETTINGS_KEY = 'wh-hub-settings'
 
@@ -53,6 +49,7 @@ export function App() {
   const [toast, setToast] = useState<string>()
   const [sessions, setSessions] = useState<SessionInfo[]>([])
   const [presets, setPresets] = useState<PresetInfo[]>([])
+  const [folders, setFolders] = useState<FolderInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>()
   const [showOverview, setShowOverview] = useState(false)
   const [, setTick] = useState(0)
@@ -65,6 +62,7 @@ export function App() {
       client.onMessage((msg) => {
         if (msg.t === 'hello-ok' || msg.t === 'sessions') setSessions(client.sessions)
         if (msg.t === 'hello-ok') setPresets(client.presets)
+        if (msg.t === 'hello-ok' || msg.t === 'folders') setFolders(client.folders)
         if (msg.t === 'created') {
           setSelectedId(msg.session.id)
           setShowCreate(false)
@@ -208,26 +206,21 @@ export function App() {
             >
               ▦ Overview
             </button>
-            <div className="session-list">
-              {sessions.map((s) => (
-                <SessionCard
-                  key={s.id}
-                  session={s}
-                  selected={s.id === selectedId}
-                  onSelect={() => setSelectedId(s.id)}
-                  onKill={() => client.send({ t: 'kill', sessionId: s.id })}
-                  onRelaunch={() => {
-                    setSelectedId(s.id)
-                    client.send({ t: 'relaunch', sessionId: s.id, cols: 120, rows: 30 })
-                  }}
-                  onRemove={() => {
-                    client.send({ t: 'remove', sessionId: s.id })
-                    if (selectedId === s.id) setSelectedId(undefined)
-                  }}
-                />
-              ))}
-              {sessions.length === 0 && <div className="empty">No sessions yet</div>}
-            </div>
+            <ChatList
+              sessions={sessions}
+              folders={folders}
+              selectedId={selectedId}
+              send={(msg) => client.send(msg)}
+              onSelect={setSelectedId}
+              onRelaunch={(id) => {
+                setSelectedId(id)
+                client.send({ t: 'relaunch', sessionId: id, cols: 120, rows: 30 })
+              }}
+              onRemove={(id) => {
+                client.send({ t: 'remove', sessionId: id })
+                if (selectedId === id) setSelectedId(undefined)
+              }}
+            />
           </>
         )}
       </aside>
@@ -259,7 +252,10 @@ export function App() {
                 ‹ Sessions
               </button>
             )}
-            <span className="toolbar-name">{selected.name}</span>
+            <span className="toolbar-name">
+              {selected.color && <span className="chat-dot" style={chatStyle(selected.color)} />}
+              {selected.name}
+            </span>
             {selected.status === 'running' && (
               <AutoContinueControl
                 session={selected}
@@ -426,7 +422,12 @@ function OverviewPanel(props: {
           const st = eff(s)
           const meta = STATUS_META[st]
           return (
-            <div key={s.id} className={`ov-row ${meta.cls}`} onClick={() => props.onOpen(s.id)}>
+            <div
+              key={s.id}
+              className={`ov-row ${meta.cls} ${s.color ? 'tagged' : ''}`}
+              style={chatStyle(s.color)}
+              onClick={() => props.onOpen(s.id)}
+            >
               <div className="ov-row-main">
                 <span className={`ov-badge ${meta.cls}`}>{meta.label}</span>
                 <span className="ov-name">{s.name}</span>
@@ -513,60 +514,6 @@ function AutoContinueControl(props: { session: SessionInfo; onSet: (enabled: boo
           </div>
         </div>
       )}
-    </div>
-  )
-}
-
-function SessionCard(props: {
-  session: SessionInfo
-  selected: boolean
-  onSelect: () => void
-  onKill: () => void
-  onRelaunch: () => void
-  onRemove: () => void
-}) {
-  const { session: s, selected, onSelect, onKill, onRelaunch, onRemove } = props
-  return (
-    <div className={`session-card ${selected ? 'selected' : ''}`} onClick={onSelect}>
-      <div className="session-top">
-        <span className={`dot ${s.status === 'running' ? 'ok' : 'off'}`} />
-        <span className="session-name">{s.name}</span>
-      </div>
-      <div className="session-meta">
-        {s.owner} · {s.status}
-        {s.status === 'running' && s.attachedClients > 0 && ` · ${s.attachedClients} attached`}
-      </div>
-      {(s.costUsd > 0 || s.tokens > 0) && (
-        <div className="session-meta usage">
-          {fmtCost(s.costUsd)} · {fmtTokens(s.tokens)} tokens
-        </div>
-      )}
-      <div className="session-meta path">{s.cwd}</div>
-      {s.links.length > 0 && (
-        <div className="session-links">
-          {s.links.map((l) => (
-            <button key={l.url} className="btn tiny link" onClick={(e) => (e.stopPropagation(), openLink(l.url))}>
-              {l.label} ↗
-            </button>
-          ))}
-        </div>
-      )}
-      <div className="session-actions">
-        {s.status === 'running' ? (
-          <button className="btn tiny danger" onClick={(e) => (e.stopPropagation(), onKill())}>
-            kill
-          </button>
-        ) : (
-          <>
-            <button className="btn tiny" onClick={(e) => (e.stopPropagation(), onRelaunch())}>
-              relaunch
-            </button>
-            <button className="btn tiny" onClick={(e) => (e.stopPropagation(), onRemove())}>
-              remove
-            </button>
-          </>
-        )}
-      </div>
     </div>
   )
 }

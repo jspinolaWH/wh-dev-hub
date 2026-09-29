@@ -1,4 +1,4 @@
-import type { ClientMsg, ServerMsg, SessionInfo, PresetInfo } from '@wh/shared'
+import type { ClientMsg, ServerMsg, SessionInfo, PresetInfo, FolderInfo } from '@wh/shared'
 
 type Listener = (msg: ServerMsg) => void
 
@@ -11,6 +11,7 @@ export class HubClient {
   user = ''
   sessions: SessionInfo[] = []
   presets: PresetInfo[] = []
+  folders: FolderInfo[] = []
 
   onMessage(fn: Listener): () => void {
     this.listeners.add(fn)
@@ -46,9 +47,12 @@ export class HubClient {
         this.user = msg.user
         this.sessions = msg.sessions
         this.presets = msg.presets
+        this.folders = msg.folders ?? [] // older daemons don't send folders
         onStateChange(this.state)
       } else if (msg.t === 'sessions') {
         this.sessions = msg.sessions
+      } else if (msg.t === 'folders') {
+        this.folders = msg.folders
       } else if (msg.t === 'error' && this.state !== 'connected') {
         onStateChange('disconnected', msg.message)
         ws.close()

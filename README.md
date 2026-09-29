@@ -36,7 +36,7 @@ The daemon prints its data dir; `daemon/data/config.json` holds everything:
                                       // everyone else gets an isolated profile under
                                       // data/profiles/<user>/claude (log in once, in-terminal)
   "presets": [ ... ],            // one-click environments, see below
-  "scrollbackChars": 2000000
+  "scrollbackLines": 10000       // per session, restored in full when you open a chat
 }
 ```
 
@@ -81,6 +81,9 @@ node daemon/test/smoke.mjs      # session keeps running with no client attached
 node daemon/test/claude-e2e.mjs # real `claude -p` run inside a session
 node daemon/test/multiuser.mjs  # read-only peek, owner-only input, isolated profiles
 node daemon/test/preset.mjs     # port allocation + ${} substitution + live service
+node daemon/test/history.mjs    # reopening a chat restores its whole scrollback
+node daemon/test/rename.mjs     # `/rename` inside Claude renames the hub chat
+node daemon/test/folders.mjs    # folders + colour tags: per-user, validated, persisted
 ```
 
 (Daemon must be running; tests read the token from `daemon/data/config.json`.)
