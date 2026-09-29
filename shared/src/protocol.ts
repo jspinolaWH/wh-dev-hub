@@ -33,6 +33,19 @@ export interface SessionInfo {
   lastLine: string
   /** Agent-reported progress, scraped from a [[WH-PROGRESS ...]] line. */
   progress?: { pct?: number; eta?: string; note?: string }
+  /** Sidebar organisation, owned by the session's user. */
+  color?: ChatColor
+  folderId?: string
+}
+
+/** Colour tags a chat can carry (the client maps them to its palette). */
+export const CHAT_COLORS = ['blue', 'teal', 'green', 'yellow', 'orange', 'red', 'pink', 'purple'] as const
+export type ChatColor = (typeof CHAT_COLORS)[number]
+
+/** A user's sidebar folder for grouping chats. */
+export interface FolderInfo {
+  id: string
+  name: string
 }
 
 export interface PresetInfo {
@@ -67,9 +80,16 @@ export type ClientMsg =
   | { t: 'resize'; sessionId: string; cols: number; rows: number }
   | { t: 'kill'; sessionId: string }
   | { t: 'remove'; sessionId: string }
+  /** Rename / recolour / move a chat; `null` clears the colour or folder. */
+  | { t: 'update-session'; sessionId: string; name?: string; color?: ChatColor | null; folderId?: string | null }
+  | { t: 'create-folder'; name: string }
+  | { t: 'rename-folder'; folderId: string; name: string }
+  /** Deletes only the folder; its chats move back out to the top level. */
+  | { t: 'delete-folder'; folderId: string }
 
 export type ServerMsg =
-  | { t: 'hello-ok'; user: string; sessions: SessionInfo[]; presets: PresetInfo[] }
+  | { t: 'hello-ok'; user: string; sessions: SessionInfo[]; presets: PresetInfo[]; folders: FolderInfo[] }
+  | { t: 'folders'; folders: FolderInfo[] }
   | { t: 'login-url'; url: string }
   | { t: 'login-ok'; token: string; user: string }
   | { t: 'error'; message: string }

@@ -8,6 +8,7 @@ import type { SessionManager } from './sessions'
 import { DATA_DIR } from './config'
 import { resolvePreset, type Preset, type PortAllocator } from './presets'
 import type { SlackAuth } from './slackAuth'
+import type { FolderStore } from './folders'
 import { createWebHandler, defaultDistDir } from './web'
 
 interface ClientState {
@@ -21,13 +22,14 @@ export function startServer(opts: {
   port: number
   auth: Authenticator
   sessions: SessionManager
+  folders: FolderStore
   inheritHostClaudeLogin: string[]
   presets: Preset[]
   allocator: PortAllocator
   slackAuth?: SlackAuth
   tailnetHost?: string
 }) {
-  const { host, port, auth, sessions, inheritHostClaudeLogin, presets, allocator, slackAuth, tailnetHost } = opts
+  const { host, port, auth, sessions, folders, inheritHostClaudeLogin, presets, allocator, slackAuth, tailnetHost } = opts
   const presetInfos = presets.map((p) => ({ id: p.id, name: p.name, description: p.description }))
 
   // Injected into every session so anything started here can be reached from
@@ -51,7 +53,14 @@ export function startServer(opts: {
   // port, no extra firewall rule.
   const webHandler = createWebHandler(defaultDistDir())
   const httpServer = http.createServer(webHandler)
-  const wss = new WebSocketServer({ server: httpServer })
+  // Compress only big frames: a long chat's attach snapshot is ~1MB of very
+  // repetitive text (tens of times smaller deflated — matters over Tailscale
+  // relays), while keystroke echoes and spinner frames stay uncompressed.
+  // (ws only honours `threshold` without server context takeover.)
+  const wss = new WebSocketServer({
+    server: httpServer,
+    perMessageDeflate: { serverNoContextTakeover: true, threshold: 16 * 1024 },
+  })
   wss.on('error', (err) => console.error('[wh-dev-hub] wss error:', err))
   // If the port is still held (e.g. a stale/orphaned daemon), fail loudly and
   // exit instead of running as a non-listening zombie — makes the problem
@@ -92,6 +101,12 @@ export function startServer(opts: {
   const broadcastSessions = () => {
     for (const [ws, state] of clients) {
       if (state.user) send(ws, { t: 'sessions', sessions: listFor(state.user) })
+    }
+  }
+  // Folders are per user: only that user's clients (all their devices) hear it.
+  const broadcastFolders = (user: string) => {
+    for (const [ws, state] of clients) {
+      if (state.user === user) send(ws, { t: 'folders', folders: folders.list(user) })
     }
   }
 
@@ -154,7 +169,13 @@ export function startServer(opts: {
           const result = await auth.verify(msg.token)
           if (!result) return send(ws, { t: 'error', message: 'authentication failed' })
           state.user = result.user
-          return send(ws, { t: 'hello-ok', user: result.user, sessions: listFor(result.user), presets: presetInfos })
+          return send(ws, {
+            t: 'hello-ok',
+            user: result.user,
+            sessions: listFor(result.user),
+            presets: presetInfos,
+            folders: folders.list(result.user),
+          })
         }
 
         if (!state.user) return send(ws, { t: 'error', message: 'not authenticated' })
@@ -264,6 +285,21 @@ export function startServer(opts: {
           case 'remove':
             mustOwn(msg.sessionId)
             return sessions.remove(msg.sessionId)
+          case 'update-session': {
+            mustOwn(msg.sessionId)
+            if (msg.folderId && !folders.has(user, msg.folderId)) throw new Error(`no such folder: ${msg.folderId}`)
+            return sessions.update(msg.sessionId, { name: msg.name, color: msg.color, folderId: msg.folderId })
+          }
+          case 'create-folder':
+            folders.create(user, msg.name)
+            return broadcastFolders(user)
+          case 'rename-folder':
+            folders.rename(user, msg.folderId, msg.name)
+            return broadcastFolders(user)
+          case 'delete-folder':
+            folders.remove(user, msg.folderId)
+            broadcastFolders(user)
+            return sessions.unfile(user, msg.folderId)
         }
       } catch (err) {
         send(ws, { t: 'error', message: err instanceof Error ? err.message : String(err) })

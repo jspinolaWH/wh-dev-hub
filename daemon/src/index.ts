@@ -1,6 +1,7 @@
 import { loadConfig, DATA_DIR } from './config'
 import { StaticTokenAuth } from './auth'
 import { SessionManager } from './sessions'
+import { FolderStore } from './folders'
 import { startServer } from './server'
 import { PortAllocator } from './presets'
 import { SlackAuth } from './slackAuth'
@@ -19,7 +20,7 @@ process.on('unhandledRejection', (reason) => {
 const config = loadConfig()
 const allocator = new PortAllocator()
 const otelPort = config.otelPort ?? 7813
-const sessions = new SessionManager(config.scrollbackChars, allocator, otelPort)
+const sessions = new SessionManager(config.scrollbackLines, allocator, otelPort)
 startOtelReceiver(otelPort, sessions)
 
 // Graceful shutdown: when the service stops (Ctrl+C / Ctrl+Break / SIGTERM),
@@ -54,6 +55,7 @@ startServer({
   port: config.port,
   auth,
   sessions,
+  folders: new FolderStore(),
   inheritHostClaudeLogin: config.inheritHostClaudeLogin,
   presets: config.presets,
   allocator,

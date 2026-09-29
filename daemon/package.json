@@ -10,6 +10,8 @@
   "dependencies": {
     "@lydell/node-pty": "^1.1.0",
     "@wh/shared": "*",
+    "@xterm/addon-serialize": "^0.13.0",
+    "@xterm/headless": "^5.5.0",
     "selfsigned": "^5.5.0",
     "ws": "^8.18.0"
   },

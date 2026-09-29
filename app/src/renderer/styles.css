@@ -60,14 +60,6 @@ body {
   overflow: hidden;
 }
 
-/* Phone: the list or the open session fills the screen (App renders one). */
-@media (max-width: 760px) {
-  .sidebar {
-    width: 100%;
-    min-width: 0;
-  }
-}
-
 .sidebar {
   width: 300px;
   min-width: 300px;
@@ -78,6 +70,15 @@ body {
   gap: 12px;
   padding: 14px;
   overflow-y: auto;
+}
+
+/* Phone: the list or the open session fills the screen (App renders one).
+   Must come after .sidebar, or the fixed 300px width wins. */
+@media (max-width: 760px) {
+  .sidebar {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 .brand {
@@ -311,6 +312,413 @@ details > .btn {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+
+/* ---- Chat list: folders, colour tags, menus ---- */
+
+.chat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.chat-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.session-card {
+  transition: border-color 0.15s, background-color 0.15s, opacity 0.15s, box-shadow 0.15s;
+}
+
+.session-card.tagged {
+  border-left: 3px solid var(--chat);
+  padding-left: 8px;
+  background: color-mix(in srgb, var(--chat) 7%, var(--panel-2));
+}
+
+.session-card.tagged.selected {
+  border-color: var(--chat);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--chat) 30%, transparent);
+}
+
+.session-card.dragging {
+  opacity: 0.4;
+}
+
+.session-top .session-name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.icon-btn {
+  flex: none;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 5px 3px;
+  cursor: pointer;
+}
+
+.icon-btn:hover,
+.icon-btn:focus-visible {
+  color: var(--text);
+  background: var(--border);
+  outline: none;
+}
+
+/* With a mouse, the ⋯ buttons stay out of the way until you point at them. */
+@media (hover: hover) {
+  .session-card .icon-btn,
+  .folder-head .icon-btn {
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .session-card:hover .icon-btn,
+  .session-card.selected .icon-btn,
+  .folder-head:hover .icon-btn,
+  .icon-btn:focus-visible {
+    opacity: 1;
+  }
+}
+
+.name-input {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  font-size: 13px;
+  font-weight: 600;
+  border-color: var(--accent);
+}
+
+.session-list {
+  border-radius: 8px;
+  outline: 1px dashed transparent;
+  outline-offset: 3px;
+  min-height: 8px;
+  transition: outline-color 0.15s, background-color 0.15s;
+}
+
+.session-list.drop {
+  outline-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.drop-hint {
+  padding: 10px;
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  color: var(--accent);
+  font-size: 12px;
+  text-align: center;
+  animation: pop-in 0.15s ease;
+}
+
+.folder-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 4px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.folder-head:hover {
+  background: var(--panel-2);
+  color: var(--text);
+}
+
+.folder-head:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.folder.open .folder-head {
+  color: var(--text);
+}
+
+/* Collapsed folder holding the open chat. */
+.folder.has-selected .folder-head {
+  color: var(--accent);
+}
+
+.folder.drop .folder-head {
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel-2));
+  border-color: var(--accent);
+  color: var(--text);
+}
+
+.folder-chevron {
+  flex: none;
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.folder.open .folder-chevron {
+  transform: rotate(90deg);
+}
+
+.folder-icon {
+  flex: none;
+  color: var(--accent);
+}
+
+.folder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-count {
+  flex: none;
+  min-width: 20px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.folder-count.bump {
+  animation: count-bump 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@keyframes count-bump {
+  40% {
+    transform: scale(1.35);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+}
+
+/* Open/close: animate the row height from 0fr to 1fr (a height:auto
+   transition) while the items fade and slide into place. */
+.folder-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.18s ease,
+    visibility 0s linear 0.28s;
+}
+
+.folder.open .folder-body {
+  grid-template-rows: 1fr;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    grid-template-rows 0.28s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.22s ease 0.05s,
+    visibility 0s;
+}
+
+.folder-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.folder-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: 10px;
+  padding: 6px 0 4px 10px;
+  border-left: 1px solid var(--border);
+  transform: translateY(-8px);
+  transition: transform 0.28s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.folder.open .folder-items {
+  transform: none;
+}
+
+.folder-empty {
+  padding: 6px 2px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 200px;
+  max-width: 260px;
+  max-height: min(70vh, 420px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  animation: pop-in 0.14s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform-origin: top right;
+}
+
+.menu:focus {
+  outline: none;
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.97);
+  }
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: var(--panel-2);
+  outline: none;
+}
+
+.menu-item.current {
+  color: var(--accent);
+}
+
+.menu-item.current::after {
+  content: '✓';
+  margin-left: auto;
+}
+
+.menu-item.danger {
+  color: var(--danger);
+}
+
+.menu-hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.menu-label {
+  padding: 6px 10px 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.menu-sep {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--border);
+}
+
+.swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 10px 6px;
+}
+
+.swatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--chat);
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s;
+}
+
+.swatch:hover {
+  transform: scale(1.15);
+}
+
+.swatch.on {
+  box-shadow: 0 0 0 2px var(--panel), 0 0 0 4px var(--chat, var(--muted));
+}
+
+.swatch.none {
+  position: relative;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--muted);
+}
+
+.swatch.none::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 50%;
+  width: 2px;
+  background: var(--muted);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.swatch.none.on {
+  box-shadow: inset 0 0 0 2px var(--muted), 0 0 0 2px var(--panel), 0 0 0 4px var(--muted);
+}
+
+/* Colour tag shown next to a chat's name elsewhere (toolbar, overview). */
+.chat-dot,
+.ov-row.tagged .ov-name::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--chat);
+  vertical-align: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder-body,
+  .folder-items,
+  .folder-chevron,
+  .session-card,
+  .swatch {
+    transition: none;
+  }
+  .menu,
+  .drop-hint,
+  .folder-count.bump {
+    animation: none;
+  }
 }
 
 .toast {
