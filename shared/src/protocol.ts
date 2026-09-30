@@ -31,6 +31,8 @@ export interface SessionInfo {
   lastActivityAt: string
   /** Last meaningful output line — a glanceable "what's it doing". */
   lastLine: string
+  /** Claude's latest action or message on screen (its "●" line); better than lastLine when set. */
+  doing?: string
   /** Agent-reported progress, scraped from a [[WH-PROGRESS ...]] line. */
   progress?: { pct?: number; eta?: string; note?: string }
   /** Sidebar organisation, owned by the session's user. */

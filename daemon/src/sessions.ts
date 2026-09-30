@@ -67,9 +67,20 @@ interface Session {
     activeSince: number
     lastBellAt: number
     idleTimer?: ReturnType<typeof setTimeout>
+    recheckTimer?: ReturnType<typeof setTimeout>
+    /** Output until then is the repaint our own resize caused, not the chat working. */
+    repaintUntil?: number
   }
   /** Last non-empty, de-ANSI'd output line — the overview's "what's it doing". */
   lastLine: string
+  /** Claude's latest action or message on screen (its "●" line), if any. */
+  doing: string
+  /** Claude shows a choice (permission prompt, question) and waits for an answer. */
+  asking: boolean
+  /** New output since the last activity flush. */
+  dirty: boolean
+  /** Activity as clients last received it, to broadcast only on change. */
+  shown: string
   /** The latest de-ANSI'd chunk plus a short tail of the one before, so text
    * split across chunks still matches. */
   recentText: string
@@ -140,12 +151,47 @@ class TermMirror {
     this.term.write(data, parsed)
   }
 
-  resize(cols: number, rows: number) {
-    if (cols !== this.term.cols || rows !== this.term.rows) this.term.resize(cols, rows)
+  /** Returns whether the size actually changed. */
+  resize(cols: number, rows: number): boolean {
+    if (cols === this.term.cols && rows === this.term.rows) return false
+    this.term.resize(cols, rows)
+    return true
   }
 
   snapshot(): string {
     return this.serializer.serialize() + (this.cursorHidden ? '\x1b[?25l' : '')
+  }
+
+  /** A real terminal bell (BEL outside escape sequences like title updates). */
+  onBell(cb: () => void) {
+    this.term.onBell(cb)
+  }
+
+  /** The last `n` rows of content (blank screen below it skipped), top to bottom. */
+  private bottomRows(n: number): string[] {
+    const buf = this.term.buffer.active
+    const text = (y: number) => buf.getLine(y)?.translateToString(true) ?? ''
+    let bottom = buf.baseY + this.term.rows - 1
+    while (bottom > 0 && !text(bottom).trim()) bottom--
+    const rows: string[] = []
+    for (let y = Math.max(0, bottom - n + 1); y <= bottom; y++) rows.push(text(y))
+    return rows
+  }
+
+  /** What Claude did last: its latest "●" action or message on screen. */
+  doing(): string {
+    for (const row of this.bottomRows(80).reverse()) {
+      const m = /^\s*[●⏺]\s+(.+)$/.exec(row)
+      if (m) return m[1].trim().slice(0, 160)
+    }
+    return ''
+  }
+
+  /** A numbered choice with a cursor (permission prompt, question) is waiting for an answer. */
+  asking(): boolean {
+    const rows = this.bottomRows(24)
+    const cursor = rows.some((r) => /^[│\s]*❯\s*\d+\.\s/.test(r))
+    return cursor && rows.filter((r) => /^[│\s]*(❯\s*)?\d+\.\s/.test(r)).length >= 2
   }
 
   /** The name in the latest `/rename` confirmation near the bottom of the screen. */
@@ -196,16 +242,7 @@ export class SessionManager extends EventEmitter {
       for (const meta of metas) {
         if (!meta.usage) meta.usage = { costUsd: 0, tokens: 0 } // older sessions.json
         if (!meta.autoContinue) meta.autoContinue = { ...DEFAULT_AUTO_CONTINUE }
-        this.sessions.set(meta.id, {
-          meta,
-          proc: null,
-          status: 'lost',
-          term: new TermMirror(120, 30, this.scrollbackLines),
-          attachedClients: 0,
-          activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
-          lastLine: '',
-          recentText: '',
-        })
+        this.addSession(meta, 'lost', 120, 30)
       }
     } catch (err) {
       console.error('[sessions] failed to restore metadata:', err)
@@ -239,6 +276,7 @@ export class SessionManager extends EventEmitter {
       activityStatus: this.activityStatus(s),
       lastActivityAt: s.activity.lastOutputAt ? new Date(s.activity.lastOutputAt).toISOString() : s.meta.createdAt,
       lastLine: s.lastLine,
+      doing: s.doing,
       progress: s.progress,
       color: s.meta.color,
       folderId: s.meta.folderId,
@@ -305,7 +343,7 @@ export class SessionManager extends EventEmitter {
   private activityStatus(s: Session): 'working' | 'idle' | 'attention' | 'offline' {
     if (s.status !== 'running') return 'offline'
     const now = Date.now()
-    if (now - s.activity.lastBellAt < 30_000) return 'attention'
+    if (s.asking || now - s.activity.lastBellAt < 30_000) return 'attention'
     if (now - s.activity.lastOutputAt < 10_000) return 'working'
     return 'idle'
   }
@@ -335,32 +373,44 @@ export class SessionManager extends EventEmitter {
     const command = spec.command.trim()
     if (!fs.existsSync(spec.cwd)) throw new Error(`cwd does not exist: ${spec.cwd}`)
 
-    const session: Session = {
-      meta: {
-        id,
-        name: spec.name || command || 'shell',
-        cwd: spec.cwd,
-        command,
-        owner: spec.owner,
-        createdAt: new Date().toISOString(),
-        links: spec.links,
-        ports: spec.ports,
-        env: spec.env,
-        generation: 0,
-        usage: { costUsd: 0, tokens: 0 },
-        autoContinue: { ...DEFAULT_AUTO_CONTINUE },
-      },
+    const meta: SessionMeta = {
+      id,
+      name: spec.name || command || 'shell',
+      cwd: spec.cwd,
+      command,
+      owner: spec.owner,
+      createdAt: new Date().toISOString(),
+      links: spec.links,
+      ports: spec.ports,
+      env: spec.env,
+      generation: 0,
+      usage: { costUsd: 0, tokens: 0 },
+      autoContinue: { ...DEFAULT_AUTO_CONTINUE },
+    }
+    const session = this.addSession(meta, 'exited', spec.cols, spec.rows)
+    this.spawn(session, spec.cols, spec.rows)
+    return this.toInfo(session)
+  }
+
+  /** Runtime state around a session's metadata; spawn() attaches the pty. */
+  private addSession(meta: SessionMeta, status: Session['status'], cols: number, rows: number): Session {
+    const s: Session = {
+      meta,
       proc: null,
-      status: 'exited',
-      term: new TermMirror(spec.cols, spec.rows, this.scrollbackLines),
+      status,
+      term: new TermMirror(cols, rows, this.scrollbackLines),
       attachedClients: 0,
       activity: { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 },
       lastLine: '',
       recentText: '',
+      doing: '',
+      asking: false,
+      dirty: false,
+      shown: '',
     }
-    this.sessions.set(id, session)
-    this.spawn(session, spec.cols, spec.rows)
-    return this.toInfo(session)
+    s.term.onBell(() => this.noteBell(s))
+    this.sessions.set(meta.id, s)
+    return s
   }
 
   /**
@@ -446,6 +496,8 @@ export class SessionManager extends EventEmitter {
     session.exitCode = undefined
     session.meta.generation += 1
     session.activity = { lastOutputAt: 0, activeSince: 0, lastBellAt: 0 }
+    session.doing = ''
+    session.asking = false
     session.term.resize(cols, rows)
     this.persistMeta()
 
@@ -483,8 +535,11 @@ export class SessionManager extends EventEmitter {
   private trackActivity(s: Session, data: string) {
     const a = s.activity
     const now = Date.now()
-    if (now - a.lastOutputAt > 5000) a.activeSince = now
-    a.lastOutputAt = now
+    const repaint = now < (a.repaintUntil ?? 0)
+    if (!repaint) {
+      if (now - a.lastOutputAt > 5000) a.activeSince = now
+      a.lastOutputAt = now
+    }
 
     // Track the last meaningful line for the overview's "what's it doing".
     const clean = stripAnsi(data)
@@ -505,11 +560,13 @@ export class SessionManager extends EventEmitter {
     while ((m = PROGRESS_RE.exec(clean))) lastMatch = m[1]
     if (lastMatch) s.progress = parseProgress(lastMatch)
 
-    if (data.includes('\x07') && now - a.lastBellAt > 10_000) {
-      a.lastBellAt = now
-      this.emit('notification', s.meta.id, 'attention', `${s.meta.name}: Claude needs your attention`)
-    }
+    s.dirty = true
+    this.scheduleFlush()
+    // Working turns into idle once output stops for 10s: look again then.
+    clearTimeout(a.recheckTimer)
+    a.recheckTimer = setTimeout(() => this.scheduleFlush(), 10_500)
 
+    if (repaint) return
     clearTimeout(a.idleTimer)
     a.idleTimer = setTimeout(() => {
       if (s.status !== 'running' || a.lastOutputAt - a.activeSince <= 8000) return
@@ -529,6 +586,51 @@ export class SessionManager extends EventEmitter {
         this.emit('notification', s.meta.id, 'idle', `${s.meta.name}: finished working — waiting for you`)
       }
     }, 20_000)
+  }
+
+  /** A real bell (the mirror's parser ignores the BEL that ends title updates). */
+  private noteBell(s: Session) {
+    const now = Date.now()
+    if (now - s.activity.lastBellAt < 10_000) return
+    s.activity.lastBellAt = now
+    this.emit('notification', s.meta.id, 'attention', `${s.meta.name}: Claude needs your attention`)
+    this.scheduleFlush()
+    setTimeout(() => this.scheduleFlush(), 30_500) // attention wears off after 30s
+  }
+
+  private flushTimer?: ReturnType<typeof setTimeout>
+
+  /** Coalesce activity updates into at most one broadcast every 1.5s. */
+  private scheduleFlush() {
+    if (this.flushTimer) return
+    this.flushTimer = setTimeout(() => {
+      this.flushTimer = undefined
+      this.flushActivity()
+    }, 1500)
+  }
+
+  /**
+   * Keep clients' live view current (status icon, "what it's doing") without
+   * streaming every spinner frame: read the rendered screen of chats that
+   * printed something, and broadcast only if what a card shows changed.
+   */
+  private flushActivity() {
+    let changed = false
+    for (const s of this.sessions.values()) {
+      if (s.dirty) {
+        s.dirty = false
+        s.doing = s.term.doing()
+        const asking = s.term.asking()
+        if (asking && !s.asking) this.emit('notification', s.meta.id, 'attention', `${s.meta.name}: waiting for your answer`)
+        s.asking = asking
+      }
+      const shown = `${this.activityStatus(s)}|${s.doing || s.lastLine}|${JSON.stringify(s.progress ?? null)}`
+      if (shown !== s.shown) {
+        s.shown = shown
+        changed = true
+      }
+    }
+    if (changed) this.emit('changed')
   }
 
   /** Follow Claude's `/rename`: the chat takes the name from its confirmation. */
@@ -608,7 +710,9 @@ export class SessionManager extends EventEmitter {
   resize(id: string, cols: number, rows: number) {
     const s = this.sessions.get(id)
     if (!s) return
-    s.term.resize(cols, rows)
+    // ConPTY (and the TUI) redraw right after a resize; opening a chat must
+    // not make it look busy.
+    if (s.term.resize(cols, rows)) s.activity.repaintUntil = Date.now() + 1500
     try {
       s.proc?.resize(cols, rows)
     } catch {

@@ -77,6 +77,29 @@ any of that — it just runs the command with the ports it allocated.
 Everyone signed in sees all sessions and may **attach read-only**; only the
 session's owner can type, resize, kill, or remove it.
 
+## Using the hub
+
+Each chat card shows live status: a spinner while it works, a pulsing amber
+dot when it **needs you** (a permission prompt or question on screen, or a
+bell), and a blue dot when something happened while you were elsewhere. The
+window title counts chats that need you.
+
+| Shortcut (⌘ on a Mac) | |
+|---|---|
+| `Ctrl+K` | jump to any chat, or run a command (split view, text size, …) |
+| `Ctrl+N` / `Alt+N` | new chat |
+| `Alt+↑` / `Alt+↓` | previous / next chat |
+| `Ctrl+F` | find in the chat (Enter / Shift+Enter step through matches) |
+| `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | bigger / smaller / reset text |
+
+The toolbar's split button shows two chats side by side (a sidebar click fills
+the side you're in); the sidebar collapses to a rail of chat bubbles. Links in
+the terminal are clickable, and files dropped on it are attached to the chat.
+
+**On a phone** (the web client), type in the message box at the bottom —
+autocorrect and dictation work — and use the key bar for Esc, ⇧Tab, arrows,
+Enter and Ctrl+C. "Add to Home Screen" opens it full-screen like an app.
+
 ## Tests
 
 ```
@@ -88,6 +111,7 @@ node daemon/test/history.mjs    # reopening a chat restores its whole scrollback
 node daemon/test/rename.mjs     # `/rename` inside Claude renames the hub chat
 node daemon/test/folders.mjs    # folders + colour tags: per-user, validated, persisted
 node daemon/test/prs.mjs        # PR links collected per chat + GitHub/Linear status (own daemons, mocked APIs)
+node daemon/test/activity.mjs   # live status: working -> idle -> needs you; title BELs ignored; coalesced
 ```
 
 (Daemon must be running; tests read the token from `daemon/data/config.json`.)

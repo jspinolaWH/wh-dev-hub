@@ -1,0 +1,11 @@
+{
+  "name": "WasteHero Dev Hub",
+  "short_name": "Dev Hub",
+  "description": "Persistent Claude Code sessions on the office host",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#0b1220",
+  "theme_color": "#0b1220",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
