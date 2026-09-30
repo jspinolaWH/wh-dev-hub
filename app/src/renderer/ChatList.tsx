@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { CHAT_COLORS, type ChatColor, type ClientMsg, type FolderInfo, type SessionInfo } from '@wh/shared'
 import { fmtCost, fmtTokens, openLink } from './util'
 import { PrIcon } from './PrPanel'
+import { StatusIcon, activityOf, doingLine, timeAgo } from './status'
 
 /** Dark-theme palette for chat colour tags (the keys are shared with the daemon). */
 export const CHAT_HEX: Record<ChatColor, string> = {
@@ -53,18 +54,30 @@ function useCollapsed() {
   return [collapsed, toggle] as const
 }
 
+/** Chats in the order the sidebar shows them: each folder's, then the loose ones. */
+export function sidebarOrder(sessions: SessionInfo[], folders: FolderInfo[]): SessionInfo[] {
+  const known = new Set(folders.map((f) => f.id))
+  return [
+    ...folders.flatMap((f) => sessions.filter((s) => s.folderId === f.id)),
+    ...sessions.filter((s) => !s.folderId || !known.has(s.folderId)),
+  ]
+}
+
 /** The sidebar's chats: folders (collapsible, drop targets) then loose chats. */
 export function ChatList(props: {
   sessions: SessionInfo[]
   folders: FolderInfo[]
   selectedId?: string
+  unread: Set<string>
+  canSplit: boolean
   send: (msg: ClientMsg) => void
   onSelect: (id: string) => void
+  onOpenSplit: (id: string) => void
   onRelaunch: (id: string) => void
   onRemove: (id: string) => void
   onShowPrs: (id: string) => void
 }) {
-  const { sessions, folders, selectedId, send } = props
+  const { sessions, folders, selectedId, unread, send } = props
   const [collapsed, toggle] = useCollapsed()
   const [addingFolder, setAddingFolder] = useState(false)
   const [dragging, setDragging] = useState<string>()
@@ -103,8 +116,11 @@ export function ChatList(props: {
       session={s}
       folders={folders}
       selected={s.id === selectedId}
+      unread={unread.has(s.id)}
+      canSplit={props.canSplit}
       dragging={dragging === s.id}
       onSelect={() => props.onSelect(s.id)}
+      onOpenSplit={() => props.onOpenSplit(s.id)}
       onDragStart={() => setDragging(s.id)}
       onDragEnd={() => {
         setDragging(undefined)
@@ -145,6 +161,9 @@ export function ChatList(props: {
             count={inside.length}
             open={!collapsed.has(f.id)}
             hasSelected={inside.some((s) => s.id === selectedId)}
+            alert={
+              inside.some((s) => activityOf(s) === 'attention') ? 'attention' : inside.some((s) => unread.has(s.id)) ? 'unread' : undefined
+            }
             dropping={dropOn === f.id}
             dropZone={dropZone(f.id)}
             onToggle={() => toggle(f.id)}
@@ -169,6 +188,8 @@ function FolderSection(props: {
   count: number
   open: boolean
   hasSelected: boolean
+  /** A chat inside needs you / has news — shown on the header so a closed folder can't hide it. */
+  alert?: 'attention' | 'unread'
   dropping: boolean
   dropZone: DropZone
   onToggle: () => void
@@ -216,6 +237,12 @@ function FolderSection(props: {
           >
             {folder.name}
           </span>
+        )}
+        {props.alert && (
+          <span
+            className={`folder-alert ${props.alert}`}
+            title={props.alert === 'attention' ? 'A chat in here needs you' : 'New activity in here'}
+          />
         )}
         <CountBadge count={count} />
         <button
@@ -267,8 +294,11 @@ function SessionCard(props: {
   session: SessionInfo
   folders: FolderInfo[]
   selected: boolean
+  unread: boolean
+  canSplit: boolean
   dragging: boolean
   onSelect: () => void
+  onOpenSplit: () => void
   onDragStart: () => void
   onDragEnd: () => void
   onKill: () => void
@@ -279,17 +309,25 @@ function SessionCard(props: {
 }) {
   const { session: s, selected, onSelect, onKill, onRelaunch, onRemove, onShowPrs } = props
   const prCount = s.prs?.length ?? 0
+  const activity = activityOf(s)
+  const running = s.status === 'running'
   const [editing, setEditing] = useState(false)
   const [menuFor, setMenuFor] = useState<HTMLElement | null>(null)
   const pick = (patch: SessionPatch) => {
     setMenuFor(null)
     props.onUpdate(patch)
   }
-  const cls = ['session-card', selected && 'selected', s.color && 'tagged', props.dragging && 'dragging']
+  const act = (fn: () => void) => () => {
+    setMenuFor(null)
+    fn()
+  }
+  const hasUsage = s.costUsd > 0 || s.tokens > 0
+  const cls = ['session-card', activity, selected && 'selected', props.unread && 'unread', s.color && 'tagged', props.dragging && 'dragging']
   return (
     <div
       className={cls.filter(Boolean).join(' ')}
       style={chatStyle(s.color)}
+      title={`${s.name}\n${s.cwd}`}
       onClick={onSelect}
       draggable={!editing}
       onDragStart={(e) => {
@@ -300,7 +338,7 @@ function SessionCard(props: {
       onDragEnd={props.onDragEnd}
     >
       <div className="session-top">
-        <span className={`dot ${s.status === 'running' ? 'ok' : 'off'}`} />
+        <StatusIcon activity={activity} />
         {editing ? (
           <NameInput
             initial={s.name}
@@ -322,6 +360,10 @@ function SessionCard(props: {
             {s.name}
           </span>
         )}
+        {props.unread && <span className="unread-dot" title="New activity since you last looked" />}
+        <span className="session-time" title={new Date(s.lastActivityAt).toLocaleString()}>
+          {activity === 'working' ? '' : timeAgo(s.lastActivityAt)}
+        </span>
         <button
           className="icon-btn"
           aria-label={`${s.name} options`}
@@ -333,46 +375,31 @@ function SessionCard(props: {
           ⋯
         </button>
       </div>
-      <div className="session-meta">
-        {s.owner} · {s.status}
-        {s.status === 'running' && s.attachedClients > 0 && ` · ${s.attachedClients} attached`}
-      </div>
-      {(s.costUsd > 0 || s.tokens > 0) && (
-        <div className="session-meta usage">
-          {fmtCost(s.costUsd)} · {fmtTokens(s.tokens)} tokens
-        </div>
-      )}
-      <div className="session-meta path">{s.cwd}</div>
-      {s.links.length > 0 && (
-        <div className="session-links">
+      <div className="session-doing">{doingLine(s) || '—'}</div>
+      {(hasUsage || prCount > 0 || s.links.length > 0 || !running) && (
+        <div className="session-foot">
+          {hasUsage && (
+            <span className="session-usage">
+              {fmtCost(s.costUsd)} · {fmtTokens(s.tokens)}
+            </span>
+          )}
+          {prCount > 0 && (
+            <button className="pr-chip" title="Pull requests from this chat" onClick={(e) => (e.stopPropagation(), onShowPrs())}>
+              <PrIcon /> {prCount} PR{prCount === 1 ? '' : 's'}
+            </button>
+          )}
           {s.links.map((l) => (
             <button key={l.url} className="btn tiny link" onClick={(e) => (e.stopPropagation(), openLink(l.url))}>
               {l.label} ↗
             </button>
           ))}
+          {!running && (
+            <button className="btn tiny relaunch" onClick={(e) => (e.stopPropagation(), onRelaunch())}>
+              Relaunch
+            </button>
+          )}
         </div>
       )}
-      <div className="session-actions">
-        {prCount > 0 && (
-          <button className="pr-chip" title="Pull requests from this chat" onClick={(e) => (e.stopPropagation(), onShowPrs())}>
-            <PrIcon /> {prCount} PR{prCount === 1 ? '' : 's'}
-          </button>
-        )}
-        {s.status === 'running' ? (
-          <button className="btn tiny danger" onClick={(e) => (e.stopPropagation(), onKill())}>
-            kill
-          </button>
-        ) : (
-          <>
-            <button className="btn tiny" onClick={(e) => (e.stopPropagation(), onRelaunch())}>
-              relaunch
-            </button>
-            <button className="btn tiny" onClick={(e) => (e.stopPropagation(), onRemove())}>
-              remove
-            </button>
-          </>
-        )}
-      </div>
       {menuFor && (
         <Menu anchor={menuFor} onClose={() => setMenuFor(null)}>
           <div className="menu-label">Colour</div>
@@ -395,24 +422,17 @@ function SessionCard(props: {
             ))}
           </div>
           <div className="menu-sep" />
-          <button
-            className="menu-item"
-            onClick={() => {
-              setMenuFor(null)
-              setEditing(true)
-            }}
-          >
+          <button className="menu-item" onClick={act(() => setEditing(true))}>
             Rename
           </button>
-          <button
-            className="menu-item"
-            onClick={() => {
-              setMenuFor(null)
-              onShowPrs()
-            }}
-          >
+          <button className="menu-item" onClick={act(onShowPrs)}>
             <PrIcon /> Pull requests <span className="menu-hint">{prCount}</span>
           </button>
+          {props.canSplit && (
+            <button className="menu-item" onClick={act(props.onOpenSplit)}>
+              Open in split view
+            </button>
+          )}
           {props.folders.length > 0 && (
             <>
               <div className="menu-sep" />
@@ -431,6 +451,21 @@ function SessionCard(props: {
                   Take out of folder
                 </button>
               )}
+            </>
+          )}
+          <div className="menu-sep" />
+          {running ? (
+            <button className="menu-item danger" onClick={act(onKill)}>
+              Kill session <span className="menu-hint">stops Claude</span>
+            </button>
+          ) : (
+            <>
+              <button className="menu-item" onClick={act(onRelaunch)}>
+                Relaunch
+              </button>
+              <button className="menu-item danger" onClick={act(onRemove)}>
+                Remove from list
+              </button>
             </>
           )}
         </Menu>
