@@ -14,7 +14,9 @@ import { createWebHandler, defaultDistDir } from './web'
 
 interface ClientState {
   user: string | null
-  attached: Set<string>
+  /** Session id -> how many of this client's views show it (split view,
+   * remounts); one view closing must not cut the others off. */
+  attached: Map<string, number>
   pendingLoginState: string | null
 }
 
@@ -145,7 +147,7 @@ export function startServer(opts: {
   })
 
   wss.on('connection', (ws) => {
-    const state: ClientState = { user: null, attached: new Set(), pendingLoginState: null }
+    const state: ClientState = { user: null, attached: new Map(), pendingLoginState: null }
     clients.set(ws, state)
 
     // Without an 'error' listener, a socket error (reset/EOF) is emitted as
@@ -238,7 +240,7 @@ export function startServer(opts: {
           case 'attach': {
             mustOwn(msg.sessionId)
             const scrollback = sessions.attach(msg.sessionId, msg.cols, msg.rows)
-            state.attached.add(msg.sessionId)
+            state.attached.set(msg.sessionId, (state.attached.get(msg.sessionId) ?? 0) + 1)
             return send(ws, { t: 'attached', sessionId: msg.sessionId, scrollback })
           }
           case 'relaunch': {
@@ -246,9 +248,13 @@ export function startServer(opts: {
             sessions.relaunch(msg.sessionId, msg.cols, msg.rows)
             return
           }
-          case 'detach':
-            if (state.attached.delete(msg.sessionId)) sessions.detach(msg.sessionId)
-            return
+          case 'detach': {
+            const views = state.attached.get(msg.sessionId) ?? 0
+            if (!views) return
+            if (views === 1) state.attached.delete(msg.sessionId)
+            else state.attached.set(msg.sessionId, views - 1)
+            return sessions.detach(msg.sessionId)
+          }
           case 'input':
             mustOwn(msg.sessionId)
             return sessions.input(msg.sessionId, msg.data)
@@ -318,7 +324,7 @@ export function startServer(opts: {
     })
 
     ws.on('close', () => {
-      for (const sessionId of state.attached) sessions.detach(sessionId)
+      for (const [sessionId, views] of state.attached) for (let i = 0; i < views; i++) sessions.detach(sessionId)
       clients.delete(ws)
     })
   })

@@ -112,6 +112,7 @@ node daemon/test/rename.mjs     # `/rename` inside Claude renames the hub chat
 node daemon/test/folders.mjs    # folders + colour tags: per-user, validated, persisted
 node daemon/test/prs.mjs        # PR links collected per chat + GitHub/Linear status (own daemons, mocked APIs)
 node daemon/test/activity.mjs   # live status: working -> idle -> needs you; title BELs ignored; coalesced
+node daemon/test/views.mjs      # one chat in two views: closing one doesn't cut the other off
 ```
 
 (Daemon must be running; tests read the token from `daemon/data/config.json`.)

@@ -110,8 +110,13 @@ export function TerminalView(props: {
 
     client.send({ t: 'attach', sessionId, cols: term.cols, rows: term.rows })
 
+    // Only this view's own snapshot: another view of the same chat attaching
+    // later gets one too, and it must not be painted over this terminal.
+    let gotSnapshot = false
     const offMsg = client.onMessage((msg) => {
       if (msg.t === 'attached' && msg.sessionId === sessionId) {
+        if (gotSnapshot) return
+        gotSnapshot = true
         term.write(msg.scrollback)
       } else if (msg.t === 'output' && msg.sessionId === sessionId) {
         term.write(msg.data)
