@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type 
 import { createPortal } from 'react-dom'
 import { CHAT_COLORS, type ChatColor, type ClientMsg, type FolderInfo, type SessionInfo } from '@wh/shared'
 import { fmtCost, fmtTokens, openLink } from './util'
+import { PrIcon } from './PrPanel'
 
 /** Dark-theme palette for chat colour tags (the keys are shared with the daemon). */
 export const CHAT_HEX: Record<ChatColor, string> = {
@@ -61,6 +62,7 @@ export function ChatList(props: {
   onSelect: (id: string) => void
   onRelaunch: (id: string) => void
   onRemove: (id: string) => void
+  onShowPrs: (id: string) => void
 }) {
   const { sessions, folders, selectedId, send } = props
   const [collapsed, toggle] = useCollapsed()
@@ -111,6 +113,7 @@ export function ChatList(props: {
       onKill={() => send({ t: 'kill', sessionId: s.id })}
       onRelaunch={() => props.onRelaunch(s.id)}
       onRemove={() => props.onRemove(s.id)}
+      onShowPrs={() => props.onShowPrs(s.id)}
       onUpdate={(patch) => send({ t: 'update-session', sessionId: s.id, ...patch })}
     />
   )
@@ -271,9 +274,11 @@ function SessionCard(props: {
   onKill: () => void
   onRelaunch: () => void
   onRemove: () => void
+  onShowPrs: () => void
   onUpdate: (patch: SessionPatch) => void
 }) {
-  const { session: s, selected, onSelect, onKill, onRelaunch, onRemove } = props
+  const { session: s, selected, onSelect, onKill, onRelaunch, onRemove, onShowPrs } = props
+  const prCount = s.prs?.length ?? 0
   const [editing, setEditing] = useState(false)
   const [menuFor, setMenuFor] = useState<HTMLElement | null>(null)
   const pick = (patch: SessionPatch) => {
@@ -348,6 +353,11 @@ function SessionCard(props: {
         </div>
       )}
       <div className="session-actions">
+        {prCount > 0 && (
+          <button className="pr-chip" title="Pull requests from this chat" onClick={(e) => (e.stopPropagation(), onShowPrs())}>
+            <PrIcon /> {prCount} PR{prCount === 1 ? '' : 's'}
+          </button>
+        )}
         {s.status === 'running' ? (
           <button className="btn tiny danger" onClick={(e) => (e.stopPropagation(), onKill())}>
             kill
@@ -393,6 +403,15 @@ function SessionCard(props: {
             }}
           >
             Rename
+          </button>
+          <button
+            className="menu-item"
+            onClick={() => {
+              setMenuFor(null)
+              onShowPrs()
+            }}
+          >
+            <PrIcon /> Pull requests <span className="menu-hint">{prCount}</span>
           </button>
           {props.folders.length > 0 && (
             <>

@@ -2,6 +2,7 @@ import { loadConfig, DATA_DIR } from './config'
 import { StaticTokenAuth } from './auth'
 import { SessionManager } from './sessions'
 import { FolderStore } from './folders'
+import { PrStatusService } from './prs'
 import { startServer } from './server'
 import { PortAllocator } from './presets'
 import { SlackAuth } from './slackAuth'
@@ -56,6 +57,7 @@ startServer({
   auth,
   sessions,
   folders: new FolderStore(),
+  prStatus: new PrStatusService(config),
   inheritHostClaudeLogin: config.inheritHostClaudeLogin,
   presets: config.presets,
   allocator,

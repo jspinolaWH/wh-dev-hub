@@ -5,9 +5,10 @@ import crypto from 'node:crypto'
 import * as pty from '@lydell/node-pty'
 import { Terminal } from '@xterm/headless'
 import { SerializeAddon } from '@xterm/addon-serialize'
-import { CHAT_COLORS, type ChatColor, type SessionInfo, type SessionLink } from '@wh/shared'
+import { CHAT_COLORS, type ChatColor, type PrRef, type SessionInfo, type SessionLink } from '@wh/shared'
 import { DATA_DIR } from './config'
 import { cleanName } from './folders'
+import { findPrRefs, prKey } from './prs'
 import type { PortAllocator } from './presets'
 
 interface SessionMeta {
@@ -34,6 +35,10 @@ interface SessionMeta {
   /** Sidebar organisation (colour tag, folder id from the owner's FolderStore). */
   color?: ChatColor
   folderId?: string
+  /** GitHub PRs linked in the chat's output, newest first. */
+  prs?: (PrRef & { seenAt: string })[]
+  /** PRs the user removed from the list, so a redrawn transcript can't re-add them. */
+  prsHidden?: string[]
 }
 
 const DEFAULT_AUTO_CONTINUE = { enabled: false, prompt: 'continue', maxNudges: 25, sent: 0 }
@@ -100,6 +105,9 @@ function parseProgress(body: string): { pct?: number; eta?: string; note?: strin
 }
 
 const SESSIONS_PATH = path.join(DATA_DIR, 'sessions.json')
+const MAX_PRS = 50
+
+const prRefsOf = (s: Session): PrRef[] => (s.meta.prs ?? []).map(({ owner, repo, number }) => ({ owner, repo, number }))
 
 /**
  * Server-side mirror of a session's terminal. All output is parsed here, so an
@@ -234,7 +242,39 @@ export class SessionManager extends EventEmitter {
       progress: s.progress,
       color: s.meta.color,
       folderId: s.meta.folderId,
+      prs: prRefsOf(s),
     }
+  }
+
+  prRefs(id: string): PrRef[] {
+    return prRefsOf(this.mustGet(id))
+  }
+
+  /** Drop a PR from the chat's list for good (it was only mentioned, say). */
+  forgetPr(id: string, ref: PrRef) {
+    const s = this.mustGet(id)
+    const key = prKey(ref)
+    s.meta.prs = (s.meta.prs ?? []).filter((p) => prKey(p) !== key)
+    s.meta.prsHidden = [...new Set([...(s.meta.prsHidden ?? []), key])]
+    this.persistMeta()
+    this.emit('changed')
+  }
+
+  /** Remember GitHub PR links the chat printed (e.g. `gh pr create` output). */
+  private notePrs(s: Session) {
+    const list = (s.meta.prs ??= [])
+    const known = new Set([...list.map(prKey), ...(s.meta.prsHidden ?? [])])
+    const added: PrRef[] = []
+    for (const ref of findPrRefs(s.recentText)) {
+      if (known.has(prKey(ref))) continue
+      known.add(prKey(ref))
+      added.push(ref)
+    }
+    if (!added.length) return
+    list.unshift(...added.reverse().map((ref) => ({ ...ref, seenAt: new Date().toISOString() })))
+    list.splice(MAX_PRS)
+    this.persistMeta()
+    this.emit('changed')
   }
 
   /** Rename, recolour or move a chat (`null` clears colour / folder). */
@@ -449,6 +489,7 @@ export class SessionManager extends EventEmitter {
     // Track the last meaningful line for the overview's "what's it doing".
     const clean = stripAnsi(data)
     s.recentText = s.recentText.slice(-120) + clean
+    this.notePrs(s)
     const lines = clean.split(/\r?\n/).map((l) => l.trim())
     for (let i = lines.length - 1; i >= 0; i--) {
       if (lines[i]) {

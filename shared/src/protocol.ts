@@ -36,7 +36,43 @@ export interface SessionInfo {
   /** Sidebar organisation, owned by the session's user. */
   color?: ChatColor
   folderId?: string
+  /** GitHub pull requests linked in this chat's output, newest first (absent from older daemons). */
+  prs?: PrRef[]
 }
+
+export interface PrRef {
+  owner: string
+  repo: string
+  number: number
+}
+
+/** A Linear issue a pull request is attached to. */
+export interface PrTask {
+  identifier: string
+  title: string
+  url: string
+  state: string
+  /** Linear state type: triage | backlog | unstarted | started | completed | canceled. */
+  stateType: string
+  stateColor: string
+  assignee?: string
+}
+
+/** A pull request with what GitHub and Linear currently say about it. */
+export interface PrStatus extends PrRef {
+  url: string
+  title?: string
+  state?: 'OPEN' | 'CLOSED' | 'MERGED'
+  draft?: boolean
+  /** Combined CI state of the head commit. */
+  checks?: 'SUCCESS' | 'FAILURE' | 'ERROR' | 'PENDING' | 'EXPECTED'
+  review?: 'APPROVED' | 'CHANGES_REQUESTED' | 'REVIEW_REQUIRED'
+  author?: string
+  tasks: PrTask[]
+}
+
+/** Whether a status source answered: no token on the daemon, or what failed. */
+export type SourceStatus = 'ok' | 'not-configured' | { error: string }
 
 /** Colour tags a chat can carry (the client maps them to its palette). */
 export const CHAT_COLORS = ['blue', 'teal', 'green', 'yellow', 'orange', 'red', 'pink', 'purple'] as const
@@ -86,10 +122,14 @@ export type ClientMsg =
   | { t: 'rename-folder'; folderId: string; name: string }
   /** Deletes only the folder; its chats move back out to the top level. */
   | { t: 'delete-folder'; folderId: string }
+  /** Look up a chat's PRs on GitHub + their Linear tasks (cached briefly unless `refresh`). */
+  | { t: 'get-prs'; sessionId: string; refresh?: boolean }
+  | { t: 'forget-pr'; sessionId: string; pr: PrRef }
 
 export type ServerMsg =
   | { t: 'hello-ok'; user: string; sessions: SessionInfo[]; presets: PresetInfo[]; folders: FolderInfo[] }
   | { t: 'folders'; folders: FolderInfo[] }
+  | { t: 'prs'; sessionId: string; prs: PrStatus[]; github: SourceStatus; linear: SourceStatus }
   | { t: 'login-url'; url: string }
   | { t: 'login-ok'; token: string; user: string }
   | { t: 'error'; message: string }

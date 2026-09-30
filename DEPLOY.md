@@ -49,6 +49,8 @@ Then edit `%USERPROFILE%\.wh-dev-hub\config.json`:
 | `slack.publicHost` | the office PC's Tailscale hostname |
 | `slack.clientId/clientSecret` | copy from the dev machine's config (same Slack app) |
 | `presets` | see README — add the WasteHero stack preset |
+| `github.token` | read-only token for the WasteHero repos (PR status in the Pull requests panel); not needed if `gh` is logged in on the office PC |
+| `linear.apiKey` | Linear personal API key, read-only (Linear → Settings → Security & access) — shows the task each PR belongs to |
 
 Restart the daemon after config changes:
 `schtasks /End /TN "WasteHero Dev Hub Daemon" & schtasks /Run /TN "WasteHero Dev Hub Daemon"`.
