@@ -157,6 +157,9 @@ export function App() {
     markRead(id)
     const shown = p.indexOf(id)
     if (p.length === 2 && shown >= 0) return setActivePane(shown)
+    // Already the open chat: keep it and bring another one up beside it —
+    // never the same chat on both sides.
+    if (shown >= 0) return toggleSplit()
     const other = p.length === 2 ? 1 - a : 1
     const next = p.length === 2 ? [...p] : [p[0], undefined]
     next[other] = id
