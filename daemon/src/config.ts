@@ -3,6 +3,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { DEFAULT_DAEMON_PORT } from '@wh/shared'
 import type { Preset } from './presets'
+import type { PrSourcesConfig } from './prs'
 
 export interface SlackConfig {
   clientId: string
@@ -15,7 +16,7 @@ export interface SlackConfig {
   publicHost: string
 }
 
-export interface HubConfig {
+export interface HubConfig extends PrSourcesConfig {
   host: string
   port: number
   /** Localhost port for the OTLP usage receiver (Claude cost/token metrics). */

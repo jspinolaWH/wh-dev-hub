@@ -3,6 +3,7 @@ import type { FolderInfo, PresetInfo, SessionInfo } from '@wh/shared'
 import { HubClient, type ConnState } from './hubClient'
 import { TerminalView } from './TerminalView'
 import { ChatList, chatStyle } from './ChatList'
+import { PrPanel } from './PrPanel'
 import { fmtCost, fmtTokens, openLink } from './util'
 import whMark from './assets/wh-mark.svg'
 
@@ -51,6 +52,7 @@ export function App() {
   const [presets, setPresets] = useState<PresetInfo[]>([])
   const [folders, setFolders] = useState<FolderInfo[]>([])
   const [selectedId, setSelectedId] = useState<string>()
+  const [prsFor, setPrsFor] = useState<string>()
   const [showOverview, setShowOverview] = useState(false)
   const [, setTick] = useState(0)
   const [showCreate, setShowCreate] = useState(false)
@@ -220,6 +222,7 @@ export function App() {
                 client.send({ t: 'remove', sessionId: id })
                 if (selectedId === id) setSelectedId(undefined)
               }}
+              onShowPrs={setPrsFor}
             />
           </>
         )}
@@ -303,6 +306,10 @@ export function App() {
         <div className="toast" onClick={() => setToast(undefined)}>
           {toast} <span className="toast-dismiss">×</span>
         </div>
+      )}
+
+      {prsFor && sessions.some((s) => s.id === prsFor) && (
+        <PrPanel client={client} session={sessions.find((s) => s.id === prsFor)!} onClose={() => setPrsFor(undefined)} />
       )}
 
       {showCreate && (

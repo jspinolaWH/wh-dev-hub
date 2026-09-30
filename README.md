@@ -36,7 +36,10 @@ The daemon prints its data dir; `daemon/data/config.json` holds everything:
                                       // everyone else gets an isolated profile under
                                       // data/profiles/<user>/claude (log in once, in-terminal)
   "presets": [ ... ],            // one-click environments, see below
-  "scrollbackLines": 10000       // per session, restored in full when you open a chat
+  "scrollbackLines": 10000,      // per session, restored in full when you open a chat
+  "github": { "token": "…" },    // optional: PR status in a chat's Pull requests panel
+                                 //   (else GITHUB_TOKEN / GH_TOKEN, else the host's `gh` login)
+  "linear": { "apiKey": "…" }    // optional: the Linear task each PR is attached to
 }
 ```
 
@@ -84,6 +87,7 @@ node daemon/test/preset.mjs     # port allocation + ${} substitution + live serv
 node daemon/test/history.mjs    # reopening a chat restores its whole scrollback
 node daemon/test/rename.mjs     # `/rename` inside Claude renames the hub chat
 node daemon/test/folders.mjs    # folders + colour tags: per-user, validated, persisted
+node daemon/test/prs.mjs        # PR links collected per chat + GitHub/Linear status (own daemons, mocked APIs)
 ```
 
 (Daemon must be running; tests read the token from `daemon/data/config.json`.)

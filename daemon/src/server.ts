@@ -9,6 +9,7 @@ import { DATA_DIR } from './config'
 import { resolvePreset, type Preset, type PortAllocator } from './presets'
 import type { SlackAuth } from './slackAuth'
 import type { FolderStore } from './folders'
+import type { PrStatusService } from './prs'
 import { createWebHandler, defaultDistDir } from './web'
 
 interface ClientState {
@@ -23,13 +24,15 @@ export function startServer(opts: {
   auth: Authenticator
   sessions: SessionManager
   folders: FolderStore
+  prStatus: PrStatusService
   inheritHostClaudeLogin: string[]
   presets: Preset[]
   allocator: PortAllocator
   slackAuth?: SlackAuth
   tailnetHost?: string
 }) {
-  const { host, port, auth, sessions, folders, inheritHostClaudeLogin, presets, allocator, slackAuth, tailnetHost } = opts
+  const { host, port, auth, sessions, folders, prStatus, inheritHostClaudeLogin, presets, allocator, slackAuth, tailnetHost } =
+    opts
   const presetInfos = presets.map((p) => ({ id: p.id, name: p.name, description: p.description }))
 
   // Injected into every session so anything started here can be reached from
@@ -300,6 +303,14 @@ export function startServer(opts: {
             folders.remove(user, msg.folderId)
             broadcastFolders(user)
             return sessions.unfile(user, msg.folderId)
+          case 'get-prs': {
+            mustOwn(msg.sessionId)
+            const result = await prStatus.statuses(sessions.prRefs(msg.sessionId), msg.refresh)
+            return send(ws, { t: 'prs', sessionId: msg.sessionId, ...result })
+          }
+          case 'forget-pr':
+            mustOwn(msg.sessionId)
+            return sessions.forgetPr(msg.sessionId, msg.pr)
         }
       } catch (err) {
         send(ws, { t: 'error', message: err instanceof Error ? err.message : String(err) })
