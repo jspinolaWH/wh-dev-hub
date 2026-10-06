@@ -4,6 +4,7 @@ import crypto from 'node:crypto'
 import { DEFAULT_DAEMON_PORT } from '@wh/shared'
 import type { Preset } from './presets'
 import type { PrSourcesConfig } from './prs'
+import type { StatusPageConfig } from './status'
 
 export interface SlackConfig {
   clientId: string
@@ -33,6 +34,8 @@ export interface HubConfig extends PrSourcesConfig {
   presets: Preset[]
   /** Scrollback lines kept per session and restored when a client attaches. */
   scrollbackLines: number
+  /** Publish a heartbeat for the GitHub Pages status page (off when absent). */
+  statusPage?: StatusPageConfig
 }
 
 export const DATA_DIR = process.env.WH_HUB_DATA

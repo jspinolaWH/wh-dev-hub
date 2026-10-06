@@ -329,5 +329,15 @@ export function startServer(opts: {
     })
   })
 
-  return wss
+  return {
+    http: httpServer,
+    /** Open client connections, and how many signed-in people they belong to. */
+    connections: () => {
+      const users = new Set<string>()
+      for (const state of clients.values()) if (state.user) users.add(state.user)
+      return { clients: clients.size, users: users.size }
+    },
+  }
 }
+
+export type HubServer = ReturnType<typeof startServer>

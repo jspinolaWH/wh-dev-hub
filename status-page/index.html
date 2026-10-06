@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Live status of the WasteHero Dev Hub: uptime, components and server info." />
+    <meta name="theme-color" content="#0b1220" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)" />
+    <link rel="icon" href="icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icon.svg" />
+    <link rel="stylesheet" href="style.css" />
+    <title>Dev Hub Status</title>
+    <script>
+      // Before first paint, so a remembered theme doesn't flash.
+      try {
+        const t = new URLSearchParams(location.search).get('theme') || localStorage.getItem('wh-status-theme')
+        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
+      } catch {}
+    </script>
+    <script type="module" src="app.mjs"></script>
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="./">
+        <img src="icon.svg" alt="" width="30" height="30" />
+        <span>Dev Hub <span class="brand-sub">Status</span></span>
+      </a>
+      <div class="top-actions">
+        <button class="icon-btn" id="refresh" type="button" title="Refresh now (it also refreshes every minute)" aria-label="Refresh">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5" /></svg>
+        </button>
+        <button class="icon-btn" id="theme" type="button" title="Switch light / dark" aria-label="Switch light or dark theme">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9 7 7 0 0 1-9-9z" /></svg>
+        </button>
+      </div>
+    </header>
+
+    <main>
+      <p class="demo-banner" id="demo-banner" hidden>Demo data: this is what the page looks like, not the real hub.</p>
+
+      <section class="hero" id="hero" data-tone="loading" aria-live="polite">
+        <div class="hero-icon" id="hero-icon"></div>
+        <div class="hero-text">
+          <h1 id="hero-title">Checking the hub…</h1>
+          <p id="hero-detail">Loading the latest heartbeat.</p>
+        </div>
+        <a class="button" id="open-hub" href="http://jack.tailc248d9.ts.net:7811" title="Needs Tailscale">Open the hub</a>
+      </section>
+
+      <section class="card" id="uptime-card" aria-labelledby="uptime-h">
+        <div class="card-head">
+          <h2 id="uptime-h">Uptime</h2>
+          <span class="card-note" id="uptime-note"></span>
+        </div>
+        <div class="tiles" id="uptime-tiles"></div>
+        <div class="strip-wrap">
+          <div
+            class="strip"
+            id="strip"
+            tabindex="0"
+            role="group"
+            aria-label="Daily uptime. Use the arrow keys to step through the days."
+            aria-describedby="strip-tip"
+          ></div>
+          <div class="tip" id="strip-tip" role="status" hidden></div>
+        </div>
+        <div class="strip-axis" aria-hidden="true">
+          <span><span class="wide-only">90</span><span class="narrow-only">30</span> days ago</span><span>Today</span>
+        </div>
+        <ul class="legend" id="legend"></ul>
+        <details class="table-view">
+          <summary>Daily uptime as a table</summary>
+          <div class="table-scroll"><table id="uptime-table"></table></div>
+        </details>
+      </section>
+
+      <section class="card" id="components-card" aria-labelledby="components-h">
+        <div class="card-head">
+          <h2 id="components-h">Components</h2>
+          <span class="card-note" id="components-note">checked on the office PC</span>
+        </div>
+        <ul class="rows" id="components"></ul>
+      </section>
+
+      <section class="card" id="server-card" aria-labelledby="server-h">
+        <div class="card-head">
+          <h2 id="server-h">Server</h2>
+          <span class="card-note" id="server-note"></span>
+        </div>
+        <div class="tiles" id="server-tiles"></div>
+        <div class="meters" id="meters"></div>
+        <p class="host-line" id="host-line"></p>
+      </section>
+
+      <section class="card" id="incidents-card" aria-labelledby="incidents-h">
+        <div class="card-head">
+          <h2 id="incidents-h">Restarts &amp; outages</h2>
+          <span class="card-note">last 90 days</span>
+        </div>
+        <ul class="rows" id="incidents"></ul>
+      </section>
+
+      <section class="card" id="upstream-card" aria-labelledby="upstream-h">
+        <div class="card-head">
+          <h2 id="upstream-h">Services the hub relies on</h2>
+          <span class="card-note">from their status pages</span>
+        </div>
+        <ul class="rows" id="upstream"></ul>
+      </section>
+
+      <section class="card" id="connect-card" aria-labelledby="connect-h">
+        <div class="card-head">
+          <h2 id="connect-h">Connect</h2>
+          <span class="card-note">needs Tailscale on your device</span>
+        </div>
+        <ul class="rows addresses">
+          <li class="row">
+            <span class="row-name">Hub address</span>
+            <code class="addr">http://jack.tailc248d9.ts.net:7811</code>
+            <button class="copy" type="button" data-copy="http://jack.tailc248d9.ts.net:7811">Copy</button>
+          </li>
+          <li class="row">
+            <span class="row-name">If the name doesn't resolve</span>
+            <code class="addr">http://100.64.128.82:7811</code>
+            <button class="copy" type="button" data-copy="http://100.64.128.82:7811">Copy</button>
+          </li>
+        </ul>
+        <p class="links">
+          <a data-doc="ONBOARDING.md" href="https://github.com/jspinolaWH/wh-dev-hub/blob/main/ONBOARDING.md">Onboarding a new person</a>
+          <a data-doc="README.md" href="https://github.com/jspinolaWH/wh-dev-hub/blob/main/README.md">Using the hub</a>
+          <a data-doc="DEPLOY.md" href="https://github.com/jspinolaWH/wh-dev-hub/blob/main/DEPLOY.md">Deploying</a>
+          <a data-doc="" href="https://github.com/jspinolaWH/wh-dev-hub">Repository</a>
+        </p>
+        <details class="runbook">
+          <summary>Runbook for the office PC</summary>
+          <dl>
+            <dt>Restart the daemon <span class="warn-note">ends every running session</span></dt>
+            <dd><code>schtasks /Run /TN "WH Restart Daemon"</code></dd>
+            <dt>Deploy an update, from the hub's checkout (then restart)</dt>
+            <dd>
+              <code>git pull</code><code>npm install</code><code>npm run build -w daemon</code><code>npm run build -w app</code>
+            </dd>
+            <dt>Config, logins and the uptime log</dt>
+            <dd><code>%USERPROFILE%\.wh-dev-hub\</code></dd>
+            <dt>If this page says offline</dt>
+            <dd>
+              Check the PC is on and awake, Tailscale is connected, and the <em>WasteHero Dev Hub</em> service is running.
+              A hub that runs but can't reach GitHub also reads as offline here.
+            </dd>
+          </dl>
+        </details>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <p>
+        The hub publishes a heartbeat to the <a id="feed-link" href="#">status branch</a> every couple of minutes; GitHub's cache can hold it
+        back up to 5 more. Upstream rows come straight from each service's status page.
+      </p>
+    </footer>
+  </body>
+</html>

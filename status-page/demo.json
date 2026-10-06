@@ -1,0 +1,127 @@
+{
+  "schema": 1,
+  "generatedAt": "2026-10-06T09:00:00.000Z",
+  "intervalSec": 120,
+  "hub": {
+    "startedAt": "2026-10-04T06:00:10.000Z",
+    "node": "v22.20.0",
+    "build": {
+      "sha": "801f5a03c7dc7f780601eece38ae2b064a078ae1",
+      "date": "2026-09-30T15:10:10+02:00",
+      "subject": "Merge pull request #4 from jspinolaWH/fix/split-view-same-chat"
+    }
+  },
+  "host": {
+    "os": "Windows 10 Pro (10.0.19045)",
+    "arch": "x64",
+    "uptimeSec": 1054800,
+    "cpu": {
+      "model": "Intel(R) Core(TM) i7-10700 CPU @ 2.90GHz",
+      "cores": 16,
+      "usagePct": 18
+    },
+    "memory": {
+      "totalBytes": 34359738368,
+      "usedBytes": 15676630630
+    },
+    "disk": {
+      "drive": "C:",
+      "totalBytes": 1023275958272,
+      "freeBytes": 227633266688
+    }
+  },
+  "sessions": {
+    "running": 6,
+    "working": 2,
+    "idle": 3,
+    "attention": 1,
+    "stopped": 4
+  },
+  "people": {
+    "online": 3,
+    "connections": 4,
+    "registered": 5
+  },
+  "components": [
+    {
+      "id": "web",
+      "name": "Web client & WebSocket",
+      "ok": true,
+      "detail": "HTTP 200",
+      "ms": 3
+    },
+    {
+      "id": "signin",
+      "name": "Slack sign-in callback",
+      "ok": true,
+      "detail": "port 7812 open",
+      "ms": 1
+    },
+    {
+      "id": "usage",
+      "name": "Usage receiver (OTLP)",
+      "ok": true,
+      "detail": "port 7813 open",
+      "ms": 1
+    },
+    {
+      "id": "claude",
+      "name": "Claude Code CLI",
+      "ok": true,
+      "detail": "v2.1.291"
+    },
+    {
+      "id": "custom",
+      "name": "Postgres (golden DB)",
+      "ok": true,
+      "detail": "port 5432 open",
+      "ms": 2
+    }
+  ],
+  "uptime": {
+    "since": "2026-07-23T09:00:00.000Z",
+    "runs": [
+      {
+        "start": "2026-07-23T09:00:00.000Z",
+        "end": "2026-08-06T08:12:00.000Z",
+        "clean": true
+      },
+      {
+        "start": "2026-08-06T08:12:09.000Z",
+        "end": "2026-08-19T12:30:00.000Z"
+      },
+      {
+        "start": "2026-08-19T12:39:00.000Z",
+        "end": "2026-08-27T06:05:00.000Z",
+        "clean": true
+      },
+      {
+        "start": "2026-08-27T06:05:12.000Z",
+        "end": "2026-09-03T20:40:00.000Z"
+      },
+      {
+        "start": "2026-09-03T22:53:00.000Z",
+        "end": "2026-09-15T07:00:00.000Z",
+        "clean": true
+      },
+      {
+        "start": "2026-09-15T07:25:00.000Z",
+        "end": "2026-09-24T05:30:00.000Z"
+      },
+      {
+        "start": "2026-09-24T05:30:20.000Z",
+        "end": "2026-09-30T16:02:00.000Z",
+        "clean": true
+      },
+      {
+        "start": "2026-09-30T16:02:08.000Z",
+        "end": "2026-10-04T06:00:00.000Z",
+        "clean": true
+      },
+      {
+        "start": "2026-10-04T06:00:10.000Z",
+        "end": "2026-10-06T09:00:00.000Z"
+      }
+    ]
+  }
+}

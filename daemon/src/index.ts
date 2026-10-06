@@ -7,6 +7,7 @@ import { startServer } from './server'
 import { PortAllocator } from './presets'
 import { SlackAuth } from './slackAuth'
 import { startOtelReceiver } from './otel'
+import { StatusReporter } from './status'
 
 // Last-resort safety net: a stray error anywhere (e.g. a socket write to a
 // dead peer) must never crash a daemon serving the whole team. Log and keep
@@ -29,6 +30,7 @@ startOtelReceiver(otelPort, sessions)
 // tear down a live process tree (that race crashed winsw and orphaned the
 // daemon holding the ports).
 let shuttingDown = false
+let statusReporter: StatusReporter | undefined
 const shutdown = (sig: string) => {
   if (shuttingDown) return
   shuttingDown = true
@@ -38,6 +40,7 @@ const shutdown = (sig: string) => {
   } catch (err) {
     console.error('[wh-dev-hub] shutdown killAll error:', err)
   }
+  statusReporter?.stop() // records a deliberate stop, not an outage
   setTimeout(() => process.exit(0), 400)
 }
 for (const sig of ['SIGINT', 'SIGTERM', 'SIGBREAK', 'SIGHUP'] as const) {
@@ -51,7 +54,7 @@ const auth = new StaticTokenAuth(config.tokens)
 const slackAuth = config.slack?.clientId ? new SlackAuth(config) : undefined
 if (!slackAuth) console.log('[wh-dev-hub] slack sign-in not configured (config.slack missing)')
 
-startServer({
+const server = startServer({
   host: config.host,
   port: config.port,
   auth,
@@ -64,6 +67,9 @@ startServer({
   slackAuth,
   tailnetHost: config.slack?.publicHost,
 })
+if (config.statusPage?.repo) {
+  statusReporter = new StatusReporter({ statusPage: config.statusPage, config, sessions, server, otelPort })
+} else console.log('[wh-dev-hub] status page not configured (config.statusPage missing)')
 
 console.log(`[wh-dev-hub] daemon listening on ws://${config.host}:${config.port}`)
 console.log(`[wh-dev-hub] data dir: ${DATA_DIR}`)

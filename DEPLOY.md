@@ -104,6 +104,23 @@ Send teammates the `Setup.exe`. They install, enter the daemon address
 - [ ] Reboot the office PC — daemon comes back by itself (logon task)
 - [ ] Firewall blocks 7811/7812 from non-Tailscale addresses
 
+## 4. Status page (optional)
+
+A public page on GitHub Pages that says whether the hub is up, fed by a
+heartbeat the daemon pushes to the repo (README → Status page).
+
+1. **Token**: github.com → Settings → Developer settings → Fine-grained
+   tokens → Generate. Repository access: only this repo; Permissions →
+   Contents: **Read and write**. Skip this if `gh` on the office PC is logged
+   in as someone who can push here (the daemon falls back to it).
+2. **Daemon**: on the office PC, pull, `npm run build -w daemon`, add
+   `statusPage` to `%USERPROFILE%\.wh-dev-hub\config.json`, and restart
+   (`schtasks /Run /TN "WH Restart Daemon"`). Within seconds the log says
+   `status page: publishing to …`, and a `status` branch appears on GitHub.
+3. **Pages**: repo Settings → Pages → Build and deployment → Source:
+   **GitHub Actions**. The *Status page* workflow deploys on every push to
+   `main` that touches `status-page/` (or run it from the Actions tab).
+
 ## Known limitations (v1)
 
 - Sessions do not survive a daemon restart/reboot (they reappear as `lost`;
