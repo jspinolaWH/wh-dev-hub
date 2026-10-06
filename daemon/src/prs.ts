@@ -46,7 +46,6 @@ const CACHE_MS = 60_000
 export class PrStatusService {
   private cache = new Map<string, { at: number; status: PrStatus }>()
   private sources: { github: SourceStatus; linear: SourceStatus } = { github: 'ok', linear: 'ok' }
-  private ghCli?: { at: number; token?: string }
 
   constructor(private config: PrSourcesConfig) {}
 
@@ -133,18 +132,22 @@ export class PrStatusService {
 
   /** The configured token, then the usual env vars, then whoever `gh` on this host is logged in as. */
   private async githubToken(): Promise<string | undefined> {
-    const explicit = this.config.github?.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN
-    if (explicit) return explicit
-    const cached = this.ghCli
-    if (cached && Date.now() - cached.at < (cached.token ? 10 * 60_000 : 60_000)) return cached.token
-    const token = await new Promise<string | undefined>((resolve) =>
-      execFile('gh', ['auth', 'token'], { timeout: 5000, windowsHide: true }, (err, stdout) =>
-        resolve(err ? undefined : stdout.trim() || undefined),
-      ),
-    )
-    this.ghCli = { at: Date.now(), token }
-    return token
+    return this.config.github?.token || process.env.GITHUB_TOKEN || process.env.GH_TOKEN || ghAuthToken()
   }
+}
+
+let ghCli: { at: number; token?: string } | undefined
+
+/** Whoever `gh` on this host is logged in as; asked again after 10 min (1 min while nobody is). */
+export async function ghAuthToken(): Promise<string | undefined> {
+  if (ghCli && Date.now() - ghCli.at < (ghCli.token ? 10 * 60_000 : 60_000)) return ghCli.token
+  const token = await new Promise<string | undefined>((resolve) =>
+    execFile('gh', ['auth', 'token'], { timeout: 5000, windowsHide: true }, (err, stdout) =>
+      resolve(err ? undefined : stdout.trim() || undefined),
+    ),
+  )
+  ghCli = { at: Date.now(), token }
+  return token
 }
 
 async function graphql(url: string, authorization: string, query: string): Promise<Record<string, unknown>> {

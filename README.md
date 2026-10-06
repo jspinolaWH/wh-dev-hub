@@ -100,6 +100,38 @@ the terminal are clickable, and files dropped on it are attached to the chat.
 autocorrect and dictation work — and use the key bar for Esc, ⇧Tab, arrows,
 Enter and Ctrl+C. "Add to Home Screen" opens it full-screen like an app.
 
+## Status page
+
+`status-page/` is published to GitHub Pages
+(<https://jspinolawh.github.io/wh-dev-hub/>): whether the hub is up, 90 days
+of uptime with every restart and outage, component checks, server info (the
+build it runs vs `main`, Claude Code version, CPU / memory / disk, chats
+running, people online) and the status of Claude Code, GitHub, Slack and
+Tailscale. It opens from anywhere, Tailscale or not.
+
+Pages can't reach the office PC, so the daemon reports out: every 2 minutes it
+replaces the repo's `status` branch with one fresh commit holding
+`status.json`, and the page reads that. When the heartbeats stop, the page
+calls the hub offline. The page is public, so the heartbeat carries health,
+counts and host stats only, never user names, chat names, paths or spend.
+
+```jsonc
+"statusPage": {
+  "repo": "jspinolaWH/wh-dev-hub",  // where the status branch lives (the page reads it there)
+  "token": "github_pat_…",          // fine-grained, this repo only, Contents: read & write
+                                    //   (else GITHUB_TOKEN / GH_TOKEN, else the host's `gh` login)
+  "intervalSec": 120,               // optional
+  "checks": [                       // optional: more things on the PC to watch
+    { "name": "Postgres (golden DB)", "tcp": "127.0.0.1:5432" },
+    { "name": "Some service", "http": "http://127.0.0.1:3000/health" }
+  ]
+}
+```
+
+Without `statusPage` the daemon publishes nothing. To work on the page, serve
+`status-page/` with any static server and open it with `?demo` (bundled
+sample data) or `?repo=owner/name` (a real heartbeat).
+
 ## Tests
 
 ```
@@ -113,6 +145,7 @@ node daemon/test/folders.mjs    # folders + colour tags: per-user, validated, pe
 node daemon/test/prs.mjs        # PR links collected per chat + GitHub/Linear status (own daemons, mocked APIs)
 node daemon/test/activity.mjs   # live status: working -> idle -> needs you; title BELs ignored; coalesced
 node daemon/test/views.mjs      # one chat in two views: closing one doesn't cut the other off
+node daemon/test/status.mjs     # status page feed: orphan-commit heartbeat, nothing private, uptime across restarts (own daemons, mocked GitHub)
 ```
 
 (Daemon must be running; tests read the token from `daemon/data/config.json`.)

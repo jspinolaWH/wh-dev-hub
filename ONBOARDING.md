@@ -71,6 +71,8 @@ That's all on the owner's side.
 
 ## Troubleshooting
 
+- **Is the hub up at all?** <https://jspinolawh.github.io/wh-dev-hub/> says
+  whether the office PC is up and since when; it opens without Tailscale.
 - **Page won't load / "site can't be reached":** Tailscale isn't connected.
   Open the Tailscale app, confirm it's on, retry. Try the IP if the hostname
   fails.
